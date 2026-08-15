@@ -21,7 +21,8 @@ It ignores Under/Over columns, percentage columns, and duplicate rows.
 
 ## Features
 
-- 461 unique clean game rows
+- 482 unique clean game rows
+- Imported `betss.docx` archive notes for easier row auditing
 - 1X2 probability blend
 - Poisson likely scorelines
 - KNN archive matching
