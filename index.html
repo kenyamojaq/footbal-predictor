@@ -168,7 +168,7 @@ textarea { min-height: 150px; resize: vertical; }
     <div class="scoreline-head">
       <div>
         <div class="title">Scoreline Predictor cross-check</div>
-        <p>Oracle Fusion sends its first three likely scores here automatically. The Scoreline Predictor keeps its own 68-fixture pattern model and gives a second scoreline read with its original confidence verdict.</p>
+        <p>Oracle Fusion sends its first three likely scores here automatically. The Scoreline Predictor first searches for that exact 1st / 2nd / 3rd score order, then falls back to closest-looking references only when the exact pattern is missing.</p>
       </div>
       <button id="scorelineRun">Refresh scoreline</button>
     </div>
@@ -302,29 +302,34 @@ function scorelinePattern(row, picks){
     else if(slots.includes(pick)){ gained += weights[i]*.35; cross++; }
   });
   const fit=possible ? gained/possible : 0;
-  return {fit, miss:1-fit, exact, cross};
+  const fullExact=picks.length===3 && slots[0]===picks[0] && slots[1]===picks[1] && slots[2]===picks[2];
+  return {fit, miss:1-fit, exact, cross, fullExact};
 }
 function scorelinePredict(uh, ud, ua, us1, us2, us3){
   const weighted={}, distances=[], picks=[us1,us2,us3].filter(Boolean);
+  const exactRows=[];
   SCORELINE_DATA.forEach((row, idx)=>{
     const zh=(row.h-uh)/SCORELINE_STAT.h.s;
     const zd=(row.d-ud)/SCORELINE_STAT.d.s;
     const za=(row.a-ua)/SCORELINE_STAT.a.s;
     const oddsDist=Math.sqrt(zh*zh+zd*zd+za*za);
     const pattern=scorelinePattern(row, [us1, us2, us3]);
+    if(pattern.fullExact) exactRows.push(row);
     const dist=picks.length ? pattern.miss*2.4 + oddsDist*.45 : oddsDist;
-    const patternBoost=1 + pattern.fit*1.9 + pattern.exact*.18;
+    const exactPriority=pattern.fullExact ? .01 : 1;
+    const patternBoost=1 + pattern.fit*1.9 + pattern.exact*.18 + (pattern.fullExact?3.5:0);
     const weight=(1/Math.pow(.22+dist,1.35))*patternBoost;
     weighted[row.actual]=(weighted[row.actual]||0)+weight;
-    distances.push({row, dist, oddsDist, pattern, weight, idx});
+    distances.push({row, dist:dist*exactPriority, rawDist:dist, oddsDist, pattern, weight, idx});
   });
   const total=Object.values(weighted).reduce((a,b)=>a+b,0)||1;
   const ranked=Object.entries(weighted).map(([score,w])=>({score,pct:w/total*100})).sort((a,b)=>b.pct-a.pct);
   distances.sort((a,b)=>a.dist-b.dist);
   const nearest=distances.slice(0,6);
   const best=nearest[0] || {dist:99, pattern:{fit:0, exact:0}, row:{}};
-  const goodReference=best.pattern.fit>=.45 || best.pattern.exact>=2 || best.dist<1.05;
-  return {ranked, nearest, feed:picks, goodReference, bestReference:best};
+  const hasExact=exactRows.length>0;
+  const goodReference=hasExact || best.pattern.fit>=.45 || best.pattern.exact>=2 || best.rawDist<1.05;
+  return {ranked, nearest, feed:picks, goodReference, hasExact, exactCount:exactRows.length, bestReference:best};
 }
 function renderScoreline(inp, oracleScores){
   const topScores=oracleScores.map(s=>s.score).filter(Boolean).slice(0,3);
@@ -352,7 +357,8 @@ function renderScoreline(inp, oracleScores){
   const max=top.pct||1;
   byId("scorelineBreakdown").innerHTML=res.ranked.slice(0,5).map(x=>`<div class="scoreline-row"><b>${x.score}</b><div class="track"><div class="fill" style="background:var(--blue);width:${(x.pct/max*100).toFixed(1)}%"></div></div><span>${x.pct.toFixed(1)}%</span></div>`).join("");
   byId("scorelineVerdict").className=`scoreline-verdict ${verdict.cls}`;
-  byId("scorelineVerdict").innerHTML=`<b>${verdict.label}</b><p>${verdict.text} It matched Oracle's top three in order: ${res.feed.join(", ")}. Closest reference: ${res.bestReference.row.s1||"--"} / ${res.bestReference.row.s2||"--"} / ${res.bestReference.row.s3||"--"} -> ${res.bestReference.row.actual||"--"}.</p>`;
+  const refMode=res.hasExact ? `Exact ordered pattern found in ${res.exactCount} reference${res.exactCount===1?"":"s"}.` : "No exact ordered pattern found; using closest-looking reference.";
+  byId("scorelineVerdict").innerHTML=`<b>${verdict.label}</b><p>${verdict.text} ${refMode} Input order checked: ${res.feed.join(" / ")}. Best reference: ${res.bestReference.row.s1||"--"} / ${res.bestReference.row.s2||"--"} / ${res.bestReference.row.s3||"--"} -> ${res.bestReference.row.actual||"--"}.</p>`;
   byId("scorelineMatches").innerHTML=`<table><thead><tr><th>H</th><th>D</th><th>A</th><th>1st</th><th>2nd</th><th>3rd</th><th>Actual</th><th>Pattern</th></tr></thead><tbody>${res.nearest.map(n=>`<tr><td>${fmt(n.row.h)}</td><td>${fmt(n.row.d)}</td><td>${fmt(n.row.a)}</td><td>${n.row.s1||"--"}</td><td>${n.row.s2||"--"}</td><td>${n.row.s3||"--"}</td><td>${n.row.actual}</td><td>${(n.pattern.fit*100).toFixed(0)}%</td></tr>`).join("")}</tbody></table>`;
   return res;
 }
