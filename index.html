@@ -99,9 +99,14 @@ textarea { min-height: 150px; resize: vertical; }
 .scoreline-verdict.caution b { color: var(--away); }
 .scoreline-bars { display: grid; gap: 8px; }
 .scoreline-row { display: grid; grid-template-columns: 58px 1fr 54px; gap: 10px; align-items: center; font-size: 13px; }
+.scoreline-insights { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.scoreline-insight { border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); padding: 10px; min-height: 70px; }
+.scoreline-insight b { display: block; font-size: 16px; margin-bottom: 4px; }
+.scoreline-insight span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.scoreline-nobet { border-color: var(--away); color: var(--away); font-weight: 700; }
 .scoreline-table { margin-top: 12px; max-height: 250px; overflow: auto; }
 .scoreline-table table { font-size: 12px; }
-@media (max-width: 900px) { .scoreline-head, .scoreline-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .scoreline-head, .scoreline-grid, .scoreline-insights { grid-template-columns: 1fr; } }
 
 </style>
 </head>
@@ -179,6 +184,7 @@ textarea { min-height: 150px; resize: vertical; }
       </div>
       <div class="scoreline-result">
         <div class="scoreline-board" id="scorelineBoard"><span>Run Oracle Fusion to feed the top three scores.</span></div>
+        <div class="scoreline-insights" id="scorelineInsights"></div>
         <div class="scoreline-bars" id="scorelineBreakdown"></div>
         <div class="note" id="scorelineVerdict"></div>
       </div>
@@ -305,6 +311,27 @@ function scorelinePattern(row, picks){
   const fullExact=picks.length===3 && slots[0]===picks[0] && slots[1]===picks[1] && slots[2]===picks[2];
   return {fit, miss:1-fit, exact, cross, fullExact};
 }
+function scorelineResult(score){
+  const [h,a]=score.split("-").map(Number);
+  return h>a?"1":a>h?"2":"X";
+}
+function scorelineFamily(score){
+  const [h,a]=score.split("-").map(Number), total=h+a;
+  if(h===a) return total<=2?"Low draw":"High draw";
+  if(total<=1) return "Tight low score";
+  if(total<=3) return h>a?"Home narrow":"Away narrow";
+  if(Math.abs(h-a)>=3) return h>a?"Home blowout":"Away blowout";
+  return h>a?"Home open":"Away open";
+}
+function scorelineGrade(res){
+  const best=res.bestReference;
+  const close=res.nearest.filter(n=>n.pattern.fit>=.55 || n.pattern.exact>=2).length;
+  if(res.hasExact && res.exactCount>=2) return {grade:"A", text:"Exact pattern has repeated references."};
+  if(res.hasExact) return {grade:"B+", text:"Exact ordered pattern exists once."};
+  if(best.pattern.fit>=.72 || close>=3) return {grade:"B", text:"Closest references are strongly similar."};
+  if(best.pattern.fit>=.45 || close>=1) return {grade:"C", text:"Only a partial pattern reference exists."};
+  return {grade:"D", text:"No good historical reference."};
+}
 function scorelinePredict(uh, ud, ua, us1, us2, us3){
   const weighted={}, distances=[], picks=[us1,us2,us3].filter(Boolean);
   const exactRows=[];
@@ -318,9 +345,10 @@ function scorelinePredict(uh, ud, ua, us1, us2, us3){
     const dist=picks.length ? pattern.miss*2.4 + oddsDist*.45 : oddsDist;
     const exactPriority=pattern.fullExact ? .01 : 1;
     const patternBoost=1 + pattern.fit*1.9 + pattern.exact*.18 + (pattern.fullExact?3.5:0);
-    const weight=(1/Math.pow(.22+dist,1.35))*patternBoost;
+    const recencyBoost=1 + (idx/Math.max(1,SCORELINE_DATA.length-1))*.28;
+    const weight=(1/Math.pow(.22+dist,1.35))*patternBoost*recencyBoost;
     weighted[row.actual]=(weighted[row.actual]||0)+weight;
-    distances.push({row, dist:dist*exactPriority, rawDist:dist, oddsDist, pattern, weight, idx});
+    distances.push({row, dist:dist*exactPriority, rawDist:dist, oddsDist, pattern, weight, recencyBoost, idx});
   });
   const total=Object.values(weighted).reduce((a,b)=>a+b,0)||1;
   const ranked=Object.entries(weighted).map(([score,w])=>({score,pct:w/total*100})).sort((a,b)=>b.pct-a.pct);
@@ -329,14 +357,16 @@ function scorelinePredict(uh, ud, ua, us1, us2, us3){
   const best=nearest[0] || {dist:99, pattern:{fit:0, exact:0}, row:{}};
   const hasExact=exactRows.length>0;
   const goodReference=hasExact || best.pattern.fit>=.45 || best.pattern.exact>=2 || best.rawDist<1.05;
-  return {ranked, nearest, feed:picks, goodReference, hasExact, exactCount:exactRows.length, bestReference:best};
+  const exactHits=exactRows.filter(row=>picks.includes(row.actual)).length;
+  return {ranked, nearest, feed:picks, goodReference, hasExact, exactCount:exactRows.length, exactRows, exactHits, bestReference:best};
 }
-function renderScoreline(inp, oracleScores){
+function renderScoreline(inp, oracleScores, oracleResult){
   const topScores=oracleScores.map(s=>s.score).filter(Boolean).slice(0,3);
   while(topScores.length<3) topScores.push("");
   byId("scorelinePicks").innerHTML=topScores.map((score,i)=>`<div class="scoreline-pick"><b>${i+1}</b><span>${score||"--"}</span></div>`).join("");
   if(!topScores[0]){
     byId("scorelineBoard").innerHTML='<span>No Oracle score feed yet.</span>';
+    byId("scorelineInsights").innerHTML='';
     byId("scorelineBreakdown").innerHTML='';
     byId("scorelineVerdict").textContent='';
     byId("scorelineMatches").innerHTML='';
@@ -345,7 +375,15 @@ function renderScoreline(inp, oracleScores){
   const res=scorelinePredict(inp.home, inp.draw, inp.away, topScores[0], topScores[1], topScores[2]);
   const top=res.ranked[0], second=res.ranked[1] || {pct:0, score:"--"};
   const gap=top.pct-second.pct;
+  const topResult=scorelineResult(top.score);
+  const disagree=oracleResult && oracleResult.top && oracleResult.top!==topResult;
+  const grade=scorelineGrade(res);
+  const exactRate=res.exactCount ? `${Math.round(res.exactHits/res.exactCount*100)}%` : "0%";
+  const exactText=res.exactCount ? `${res.exactHits}/${res.exactCount} exact refs ended as one of the input scores.` : "No exact pattern history yet.";
+  const family=scorelineFamily(top.score);
+  const familyCount=res.nearest.filter(n=>scorelineFamily(n.row.actual)===family).length;
   const weakRef=!res.goodReference;
+  const avoidBet=weakRef || disagree || grade.grade==="D";
   const verdict=weakRef
     ? {cls:"caution", label:"&#9888; Caution - No Good Reference", text:`No good reference to this ordered score pattern. Closest pattern fit is ${(res.bestReference.pattern.fit*100).toFixed(0)}%, so treat ${top.score} as weak.`}
     : top.pct>=26 && gap>=7
@@ -354,12 +392,18 @@ function renderScoreline(inp, oracleScores){
         ? {cls:"caution", label:"&#9888; Caution - No Clear Winner", text:`The top candidates are bunched close together: ${top.score} leads ${second.score} by only ${gap.toFixed(1)} points.`}
         : {cls:"moderate", label:"&#9680; Moderate Confidence", text:`${top.score} has a decent lead, but ${second.score} is still a live alternative at a ${gap.toFixed(1)} point gap.`};
   byId("scorelineBoard").innerHTML=`<strong>${top.score}</strong><span>${top.pct.toFixed(1)}% model confidence from Scoreline Predictor</span>`;
+  byId("scorelineInsights").innerHTML=[
+    [`Grade ${grade.grade}`,grade.text],
+    [`Exact ${exactRate}`,exactText],
+    [family,`${familyCount}/6 closest references share this score family.`],
+    [avoidBet?"NO BET check":"Agreement check", avoidBet ? `${disagree?"Oracle result and Scoreline result disagree. ":""}${weakRef?"No good reference. ":""}Reduce or skip.` : "Oracle and Scoreline are not fighting each other."]
+  ].map(x=>`<div class="scoreline-insight ${x[0].includes("NO BET")?"scoreline-nobet":""}"><b>${x[0]}</b><span>${x[1]}</span></div>`).join("");
   const max=top.pct||1;
   byId("scorelineBreakdown").innerHTML=res.ranked.slice(0,5).map(x=>`<div class="scoreline-row"><b>${x.score}</b><div class="track"><div class="fill" style="background:var(--blue);width:${(x.pct/max*100).toFixed(1)}%"></div></div><span>${x.pct.toFixed(1)}%</span></div>`).join("");
   byId("scorelineVerdict").className=`scoreline-verdict ${verdict.cls}`;
   const refMode=res.hasExact ? `Exact ordered pattern found in ${res.exactCount} reference${res.exactCount===1?"":"s"}.` : "No exact ordered pattern found; using closest-looking reference.";
-  byId("scorelineVerdict").innerHTML=`<b>${verdict.label}</b><p>${verdict.text} ${refMode} Input order checked: ${res.feed.join(" / ")}. Best reference: ${res.bestReference.row.s1||"--"} / ${res.bestReference.row.s2||"--"} / ${res.bestReference.row.s3||"--"} -> ${res.bestReference.row.actual||"--"}.</p>`;
-  byId("scorelineMatches").innerHTML=`<table><thead><tr><th>H</th><th>D</th><th>A</th><th>1st</th><th>2nd</th><th>3rd</th><th>Actual</th><th>Pattern</th></tr></thead><tbody>${res.nearest.map(n=>`<tr><td>${fmt(n.row.h)}</td><td>${fmt(n.row.d)}</td><td>${fmt(n.row.a)}</td><td>${n.row.s1||"--"}</td><td>${n.row.s2||"--"}</td><td>${n.row.s3||"--"}</td><td>${n.row.actual}</td><td>${(n.pattern.fit*100).toFixed(0)}%</td></tr>`).join("")}</tbody></table>`;
+  byId("scorelineVerdict").innerHTML=`<b>${verdict.label}</b><p>${verdict.text} ${refMode} Input order checked: ${res.feed.join(" / ")}. Best reference: ${res.bestReference.row.s1||"--"} / ${res.bestReference.row.s2||"--"} / ${res.bestReference.row.s3||"--"} -> ${res.bestReference.row.actual||"--"}. ${avoidBet?"NO BET warning is active for this scoreline cross-check.":""}</p>`;
+  byId("scorelineMatches").innerHTML=`<table><thead><tr><th>H</th><th>D</th><th>A</th><th>1st</th><th>2nd</th><th>3rd</th><th>Actual</th><th>Pattern</th><th>Family</th></tr></thead><tbody>${res.nearest.map(n=>`<tr><td>${fmt(n.row.h)}</td><td>${fmt(n.row.d)}</td><td>${fmt(n.row.a)}</td><td>${n.row.s1||"--"}</td><td>${n.row.s2||"--"}</td><td>${n.row.s3||"--"}</td><td>${n.row.actual}</td><td>${(n.pattern.fit*100).toFixed(0)}%</td><td>${scorelineFamily(n.row.actual)}</td></tr>`).join("")}</tbody></table>`;
   return res;
 }
 
@@ -395,7 +439,7 @@ function render() {
     [`xG away`,fmt(r.lam.away),`Poisson expected goals from market shape.`],
   ].map(m=>`<div class="metric"><b>${m[1]}</b><span>${m[0]}<br>${m[2]}</span></div>`).join("");
   byId("scores").innerHTML=r.scores.map(s=>`<span class="chip">${s.score} - ${pct(s.p)}${s.poisson?" Poisson":""}</span>`).join("");
-  const scorelineRes=renderScoreline(inp, r.scores);
+  const scorelineRes=renderScoreline(inp, r.scores, r);
   const dcProbs={"1X":r.out["1"]+r.out.X,"X2":r.out.X+r.out["2"],"12":r.out["1"]+r.out["2"]};
   byId("dc").innerHTML=Object.entries(dcProbs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${LABEL[k]} - ${pct(v)}</span>`).join("");
   renderArchive(r.nearScores);
