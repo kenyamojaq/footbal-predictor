@@ -191,6 +191,7 @@ textarea { min-height: 150px; resize: vertical; }
         <div class="scoreline-bars" id="scorelineBreakdown"></div>
         <div class="note" id="scorelineVerdict"></div>
         <div class="independent-box" id="independentBox"><h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p></div>
+        <div class="independent-box" id="fiftyBox"><h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p></div>
       </div>
     </div>
     <div class="scoreline-table" id="scorelineMatches"></div>
@@ -377,6 +378,56 @@ function renderIndependentOpinion(inp, scorelineRes, oracleResult){
   byId("independentBox").innerHTML=`<h3 class="${cls}">Independent Result Opinion: ${LABEL[op.top]}</h3><p>Own calculation says ${LABEL[op.top]} at ${pct(op.out[op.top])}. Gap to ${LABEL[op.second]} is ${pct(op.gap)}. Reliability ${pct(op.reliability)}.${disagree?" It disagrees with Oracle, so treat as NO BET or reduce stake.":" It agrees well enough with the current read."}</p>`;
   return op;
 }
+function fiftyPointPredictor(inp, oracleResult, scorelineRes, independentRes){
+  const market=implied(inp.home,inp.draw,inp.away);
+  const near=scoreArchive(inp).slice(0,50);
+  const archive={"1":0,"X":0,"2":0};
+  near.forEach((row,idx)=>{
+    const w=(1/Math.pow(row.d+.10,1.35))*(1+(50-idx)/350);
+    archive[row.result]+=w;
+  });
+  const archiveTotal=archive["1"]+archive.X+archive["2"]||1;
+  ["1","X","2"].forEach(k=>archive[k]/=archiveTotal);
+  const scoreline={"1":0,"X":0,"2":0};
+  if(scorelineRes && scorelineRes.ranked){
+    scorelineRes.ranked.slice(0,6).forEach((row,idx)=>{
+      const res=resultFromScore(row.score);
+      scoreline[res]+=row.pct/(idx+1);
+    });
+  }
+  const scorelineTotal=scoreline["1"]+scoreline.X+scoreline["2"]||1;
+  ["1","X","2"].forEach(k=>scoreline[k]/=scorelineTotal);
+  const oracle=oracleResult ? oracleResult.out : market;
+  const independent=independentRes ? independentRes.out : archive;
+  const raw={"1":0,"X":0,"2":0};
+  ["1","X","2"].forEach(k=>{
+    raw[k]=market[k]*.20+archive[k]*.30+scoreline[k]*.20+oracle[k]*.15+independent[k]*.15;
+  });
+  const rawTotal=raw["1"]+raw.X+raw["2"]||1;
+  const normalized={"1":raw["1"]/rawTotal,"X":raw.X/rawTotal,"2":raw["2"]/rawTotal};
+  const points={"1":Math.round(normalized["1"]*50),"X":Math.round(normalized.X*50),"2":Math.round(normalized["2"]*50)};
+  let drift=points["1"]+points.X+points["2"]-50;
+  const order=["1","X","2"].sort((a,b)=>points[b]-points[a]);
+  while(drift!==0){
+    const key=drift>0 ? order[order.length-1] : order[0];
+    points[key]-=Math.sign(drift);
+    drift-=Math.sign(drift);
+  }
+  const finalOrder=["1","X","2"].sort((a,b)=>points[b]-points[a]);
+  const top=finalOrder[0], second=finalOrder[1], gap=points[top]-points[second];
+  const weakRef=scorelineRes && !scorelineRes.goodReference;
+  const agreement=[oracleResult && oracleResult.top, independentRes && independentRes.top, scorelineRes && resultFromScore(scorelineRes.ranked[0].score)].filter(Boolean);
+  const agreeCount=agreement.filter(x=>x===top).length;
+  const caution=gap<4 || weakRef || agreeCount<2;
+  return {market, archive, scoreline, points, top, second, gap, agreeCount, caution};
+}
+function renderFiftyPointPredictor(inp, oracleResult, scorelineRes, independentRes){
+  const fp=fiftyPointPredictor(inp, oracleResult, scorelineRes, independentRes);
+  const cls=fp.caution ? "scoreline-nobet" : "";
+  const rows=["1","X","2"].map(k=>`<div class="scoreline-row"><b>${LABEL[k].replace(" WIN","")}</b><div class="track"><div class="fill" style="background:${COLORS[k]};width:${fp.points[k]*2}%"></div></div><span>${fp.points[k]}/50</span></div>`).join("");
+  byId("fiftyBox").innerHTML=`<h3 class="${cls}">50-Point Independent Predictor: ${LABEL[fp.top]}</h3><p>${LABEL[fp.top]} leads with ${fp.points[fp.top]}/50. Gap to ${LABEL[fp.second]} is ${fp.gap} points. ${fp.caution?"Caution: this is not a clean 50-point separation, so reduce stake or skip.":"Good separation: this supports the current read."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
+  return fp;
+}
 function scorelinePredict(uh, ud, ua, us1, us2, us3){
   const weighted={}, distances=[], picks=[us1,us2,us3].filter(Boolean);
   const exactRows=[];
@@ -415,6 +466,7 @@ function renderScoreline(inp, oracleScores, oracleResult){
     byId("scorelineBreakdown").innerHTML='';
     byId("scorelineVerdict").textContent='';
     byId("independentBox").innerHTML='<h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p>';
+    byId("fiftyBox").innerHTML='<h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p>';
     byId("scorelineMatches").innerHTML='';
     return null;
   }
@@ -487,12 +539,14 @@ function render() {
   byId("scores").innerHTML=r.scores.map(s=>`<span class="chip">${s.score} - ${pct(s.p)}${s.poisson?" Poisson":""}</span>`).join("");
   const scorelineRes=renderScoreline(inp, r.scores, r);
   const independentRes=renderIndependentOpinion(inp, scorelineRes, r);
+  const fiftyRes=renderFiftyPointPredictor(inp, r, scorelineRes, independentRes);
   const dcProbs={"1X":r.out["1"]+r.out.X,"X2":r.out.X+r.out["2"],"12":r.out["1"]+r.out["2"]};
   byId("dc").innerHTML=Object.entries(dcProbs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${LABEL[k]} - ${pct(v)}</span>`).join("");
   renderArchive(r.nearScores);
   const scorelineText=scorelineRes ? ` Scoreline Predictor cross-check: ${scorelineRes.ranked[0].score} at ${scorelineRes.ranked[0].pct.toFixed(1)}%, using Oracle top 3 ${scorelineRes.feed.join(", ")}.` : "";
   const independentText=independentRes ? ` Independent result opinion: ${LABEL[independentRes.top]} at ${pct(independentRes.out[independentRes.top])}, reliability ${pct(independentRes.reliability)}.` : "";
-  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
+  const fiftyText=fiftyRes ? ` 50-point independent predictor: ${LABEL[fiftyRes.top]} with Home ${fiftyRes.points["1"]}/50, Draw ${fiftyRes.points.X}/50, Away ${fiftyRes.points["2"]}/50.` : "";
+  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
   byId("promptBox").value=prompt;
 }
 function renderArchive(rows=null) {
