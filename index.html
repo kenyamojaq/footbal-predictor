@@ -192,6 +192,7 @@ textarea { min-height: 150px; resize: vertical; }
         <div class="note" id="scorelineVerdict"></div>
         <div class="independent-box" id="independentBox"><h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p></div>
         <div class="independent-box" id="fiftyBox"><h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p></div>
+        <div class="independent-box" id="clusterBox"><h3>Pattern Cluster Predictor</h3><p>Run Oracle Fusion to compare this match with its closest odds-pattern cluster.</p></div>
       </div>
     </div>
     <div class="scoreline-table" id="scorelineMatches"></div>
@@ -428,6 +429,50 @@ function renderFiftyPointPredictor(inp, oracleResult, scorelineRes, independentR
   byId("fiftyBox").innerHTML=`<h3 class="${cls}">50-Point Independent Predictor: ${LABEL[fp.top]}</h3><p>${LABEL[fp.top]} leads with ${fp.points[fp.top]}/50. Gap to ${LABEL[fp.second]} is ${fp.gap} points. ${fp.caution?"Caution: this is not a clean 50-point separation, so reduce stake or skip.":"Good separation: this supports the current read."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
   return fp;
 }
+function clusterName(inp){
+  const fav=Math.min(inp.home, inp.away);
+  const side=Math.abs(inp.home-inp.away)<.18 ? "Balanced" : inp.home<inp.away ? "Home-favoured" : "Away-favoured";
+  const favBand=fav<1.7 ? "strong favourite" : fav<2.15 ? "clear favourite" : fav<2.65 ? "mild favourite" : "open match";
+  const drawBand=inp.draw<3.15 ? "low draw" : inp.draw<3.65 ? "normal draw" : "high draw";
+  return `${side}, ${favBand}, ${drawBand}`;
+}
+function patternClusterPredictor(inp){
+  const all=[...DATA.scores,...DATA.outcomes].filter(r=>r.result);
+  const exactName=clusterName(inp);
+  const market=implied(inp.home, inp.draw, inp.away);
+  const votes={"1":0,"X":0,"2":0}, exactVotes={"1":0,"X":0,"2":0};
+  let exactCount=0;
+  all.forEach(r=>{
+    const sameCluster=clusterName({home:r.home,draw:r.draw,away:r.away})===exactName;
+    const d=dist(inp,r);
+    const shapeGap=Math.abs((inp.home-inp.away)-(r.home-r.away));
+    const w=1/Math.pow(.18+d+shapeGap*.08,1.45);
+    votes[r.result]+=w;
+    if(sameCluster){
+      exactVotes[r.result]+=w*1.45;
+      exactCount++;
+    }
+  });
+  const useExact=exactCount>=12;
+  const base=useExact ? exactVotes : votes;
+  const total=base["1"]+base.X+base["2"]||1;
+  const out={"1":base["1"]/total,"X":base.X/total,"2":base["2"]/total};
+  ["1","X","2"].forEach(k=>out[k]=out[k]*.82+market[k]*.18);
+  const outTotal=out["1"]+out.X+out["2"]||1;
+  ["1","X","2"].forEach(k=>out[k]/=outTotal);
+  const order=["1","X","2"].sort((a,b)=>out[b]-out[a]);
+  const top=order[0], second=order[1], gap=out[top]-out[second];
+  const reliability=clamp((useExact?.16:.02)+out[top]*.48+gap*.9+Math.min(exactCount,30)/150,0,1);
+  const caution=!useExact || gap<.06 || reliability<.38;
+  return {name:exactName, exactCount, useExact, out, top, second, gap, reliability, caution};
+}
+function renderPatternClusterPredictor(inp){
+  const cp=patternClusterPredictor(inp);
+  const cls=cp.caution ? "scoreline-nobet" : "";
+  const rows=["1","X","2"].map(k=>`<div class="scoreline-row"><b>${LABEL[k].replace(" WIN","")}</b><div class="track"><div class="fill" style="background:${COLORS[k]};width:${pct(cp.out[k])}"></div></div><span>${pct(cp.out[k])}</span></div>`).join("");
+  byId("clusterBox").innerHTML=`<h3 class="${cls}">Pattern Cluster Predictor: ${LABEL[cp.top]}</h3><p>${cp.name}. ${cp.exactCount} matching cluster rows found. ${LABEL[cp.top]} leads ${LABEL[cp.second]} by ${pct(cp.gap)}. Reliability ${pct(cp.reliability)}. ${cp.caution?"Caution: cluster is thin or the result gap is too small.":"Cluster is strong enough to support this pick."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
+  return cp;
+}
 function scorelinePredict(uh, ud, ua, us1, us2, us3){
   const weighted={}, distances=[], picks=[us1,us2,us3].filter(Boolean);
   const exactRows=[];
@@ -467,6 +512,7 @@ function renderScoreline(inp, oracleScores, oracleResult){
     byId("scorelineVerdict").textContent='';
     byId("independentBox").innerHTML='<h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p>';
     byId("fiftyBox").innerHTML='<h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p>';
+    byId("clusterBox").innerHTML='<h3>Pattern Cluster Predictor</h3><p>Run Oracle Fusion to compare this match with its closest odds-pattern cluster.</p>';
     byId("scorelineMatches").innerHTML='';
     return null;
   }
@@ -540,13 +586,15 @@ function render() {
   const scorelineRes=renderScoreline(inp, r.scores, r);
   const independentRes=renderIndependentOpinion(inp, scorelineRes, r);
   const fiftyRes=renderFiftyPointPredictor(inp, r, scorelineRes, independentRes);
+  const clusterRes=renderPatternClusterPredictor(inp);
   const dcProbs={"1X":r.out["1"]+r.out.X,"X2":r.out.X+r.out["2"],"12":r.out["1"]+r.out["2"]};
   byId("dc").innerHTML=Object.entries(dcProbs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${LABEL[k]} - ${pct(v)}</span>`).join("");
   renderArchive(r.nearScores);
   const scorelineText=scorelineRes ? ` Scoreline Predictor cross-check: ${scorelineRes.ranked[0].score} at ${scorelineRes.ranked[0].pct.toFixed(1)}%, using Oracle top 3 ${scorelineRes.feed.join(", ")}.` : "";
   const independentText=independentRes ? ` Independent result opinion: ${LABEL[independentRes.top]} at ${pct(independentRes.out[independentRes.top])}, reliability ${pct(independentRes.reliability)}.` : "";
   const fiftyText=fiftyRes ? ` 50-point independent predictor: ${LABEL[fiftyRes.top]} with Home ${fiftyRes.points["1"]}/50, Draw ${fiftyRes.points.X}/50, Away ${fiftyRes.points["2"]}/50.` : "";
-  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
+  const clusterText=clusterRes ? ` Pattern cluster predictor: ${LABEL[clusterRes.top]} at ${pct(clusterRes.out[clusterRes.top])}, cluster ${clusterRes.name}, ${clusterRes.exactCount} matching rows.` : "";
+  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText}${clusterText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
   byId("promptBox").value=prompt;
 }
 function renderArchive(rows=null) {
