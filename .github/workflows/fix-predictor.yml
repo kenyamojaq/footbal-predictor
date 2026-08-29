@@ -1,0 +1,60 @@
+name: Fix Predictor Performance
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[predictor-patch]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch browser blocking
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old=s
+          s=s.replace('render();', '// render(); // disabled automatic startup render')
+          s=s.replace("addEventListener('input', render)", "addEventListener('input', ()=>{})")
+          s=s.replace('addEventListener("input", render)', 'addEventListener("input", ()=>{})')
+          s=s.replace("addEventListener('change', render)", "addEventListener('change', ()=>{})")
+          s=s.replace('addEventListener("change", render)', 'addEventListener("change", ()=>{})')
+          marker='<!-- PREDICTOR PERFORMANCE PATCH -->'
+          patch='''
+<!-- PREDICTOR PERFORMANCE PATCH -->
+<script>
+(function(){
+  const runBtn=document.getElementById('run');
+  if(!runBtn) return;
+  let busy=false;
+  runBtn.addEventListener('click',function(){
+    if(busy) return;
+    busy=true;
+    const old=runBtn.textContent;
+    runBtn.textContent='Calculating…';
+    runBtn.disabled=true;
+    setTimeout(function(){
+      try { if(typeof render==='function') render(); }
+      catch(e){ console.error('Predictor error:',e); }
+      finally { setTimeout(function(){runBtn.textContent=old;runBtn.disabled=false;busy=false;},50); }
+    },20);
+  });
+})();
+</script>
+'''
+          if marker not in s:
+            s=s.replace('</body>',patch+'</body>')
+          if s!=old:
+            p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix predictor browser hang [predictor-patch]'
+          git push
