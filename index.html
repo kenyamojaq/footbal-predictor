@@ -607,12 +607,13 @@ function renderArchive(rows=null) {
 byId("scoreCount").textContent=DATA.scores.length;
 byId("outcomeCount").textContent=DATA.outcomes.length;
 byId("sourceCount").textContent=new Set([...DATA.scores,...DATA.outcomes].map(x=>x.source)).size;
-byId("run").onclick=render;
-byId("scorelineRun").onclick=render;
+byId("run").onclick=()=>{ if(byId("run").disabled) return; setBusy(true); setTimeout(()=>{ try{ render(); } catch(e){ console.error(e); } finally { setBusy(false); } },20); };
+byId("scorelineRun").onclick=()=>{ if(byId("run").disabled) return; setBusy(true); setTimeout(()=>{ try{ render(); } catch(e){ console.error(e); } finally { setBusy(false); } },20); };
 byId("search").oninput=()=>renderArchive();
 byId("copyPrompt").onclick=async()=>{ await navigator.clipboard.writeText(byId("promptBox").value); byId("copyPrompt").textContent="Copied"; setTimeout(()=>byId("copyPrompt").textContent="Copy AI prompt",1200); };
-["home","draw","away","dc1x","dcx2","bankroll","maxStake"].forEach(id=>byId(id).addEventListener("input",render));
-render();
+["home","draw","away","dc1x","dcx2","bankroll","maxStake"].forEach(id=>byId(id).addEventListener("input",()=>{}));
+// render(); // disabled automatic startup calculation
+function setBusy(b){ const btn=byId("run"); if(!btn)return; btn.disabled=b; btn.textContent=b?"Calculating…":"Run prediction"; }
 </script>
 </body>
 </html>
