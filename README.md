@@ -22,13 +22,18 @@ It ignores Under/Over columns, percentage columns, and duplicate rows.
 ## Features
 
 - 482 unique clean game rows
-- Imported `betss.docx` archive notes for easier row auditing
+- Imported archive notes for row auditing
 - 1X2 probability blend
 - Poisson likely scorelines
 - KNN archive matching
 - Kelly edge/stake guidance
 - Upset-risk signal
 - KSh betting spot capped between 1 and 50 shillings
+- Scoreline Predictor cross-check
+- Independent Result Opinion
+- 50-Point Independent Predictor
+- Pattern Cluster Predictor
+- Final Decision Engine that reads all predictor outputs and produces a final 1-50 decision-strength score
 - Copyable prompt for Claude, Grok, Kimi, or ChatGPT second opinion
 
 ## Downloadable App
