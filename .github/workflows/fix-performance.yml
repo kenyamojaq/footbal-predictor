@@ -1,0 +1,58 @@
+name: Fix football predictor performance
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-performance.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch predictor for mobile performance
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old='''byId("run").onclick=render;
+byId("scorelineRun").onclick=render;
+byId("search").oninput=()=>renderArchive();
+byId("copyPrompt").onclick=async()=>{ await navigator.clipboard.writeText(byId("promptBox").value); byId("copyPrompt").textContent="Copied"; setTimeout(()=>byId("copyPrompt").textContent="Copy AI prompt",1200); };
+["home","draw","away","dc1x","dcx2","bankroll","maxStake"].forEach(id=>byId(id).addEventListener("input",render));
+render();'''
+          new='''byId("run").onclick=()=>{ setBusy(true); setTimeout(()=>{ try{ render(); } finally { setBusy(false); } },20); };
+byId("scorelineRun").onclick=()=>{ setBusy(true); setTimeout(()=>{ try{ render(); } finally { setBusy(false); } },20); };
+byId("search").oninput=()=>renderArchive();
+byId("copyPrompt").onclick=async()=>{ await navigator.clipboard.writeText(byId("promptBox").value); byId("copyPrompt").textContent="Copied"; setTimeout(()=>byId("copyPrompt").textContent="Copy AI prompt",1200); };
+byId("run").textContent="Run prediction";
+function setBusy(b){ const btn=byId("run"); btn.disabled=b; btn.textContent=b?"Calculating…":"Run prediction"; document.body.classList.toggle("calculating",b); }
+renderArchive();
+byId("pickBox").innerHTML='<h2>Ready</h2><p>Enter odds and press Run prediction.</p>';'''
+          if old not in s:
+              raise SystemExit('target event block not found')
+          s=s.replace(old,new,1)
+          marker='''.fill { height: 100%; border-radius: 20px; width: 0; transition: width .2s ease; }'''
+          s=s.replace(marker, marker+'\nbutton:disabled { opacity:.65; cursor:wait; }\n.calculating { cursor:wait; }',1)
+          s=s.replace('''function knn(inp,k=31) {
+  const ranked=DATA.outcomes.map(r=>({r,d:dist(inp,r)})).sort((a,b)=>a.d-b.d).slice(0,k);''','''const OUTCOME_ROWS=DATA.outcomes.slice();
+const SCORE_ROWS=DATA.scores.slice();
+function knn(inp,k=31) {
+  const ranked=OUTCOME_ROWS.map(r=>({r,d:dist(inp,r)})).sort((a,b)=>a.d-b.d).slice(0,k);''',1)
+          s=s.replace('''function scoreArchive(inp) {
+  return DATA.scores.map(r=>({...r,d:dist(inp,r)})).sort((a,b)=>a.d-b.d).slice(0,40);
+}''','''function scoreArchive(inp) {
+  return SCORE_ROWS.map(r=>({...r,d:dist(inp,r)})).sort((a,b)=>a.d-b.d).slice(0,40);
+}''',1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if git diff --cached --quiet; then echo 'No changes'; exit 0; fi
+          git commit -m 'Fix predictor hanging on mobile'
+          git push
