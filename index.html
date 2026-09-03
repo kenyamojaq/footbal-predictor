@@ -203,7 +203,7 @@ textarea { min-height: 150px; resize: vertical; }
   <div class="three-four-head">
     <div>
       <h2 id="threeFourPick">Awaiting model outputs</h2>
-      <p id="threeFourSummary">Special consensus check for 3/5 and 4/5 situations across the five existing predictors.</p>
+      <p id="threeFourSummary">Uses only your supplied 3/5 and 4/5 history rows; independent of all other predictors.</p>
     </div>
     <div class="three-four-score">
       <b id="threeFourScore">--/50</b>
@@ -649,63 +649,43 @@ function renderFinalDecisionEngine(inp,oracle,scoreline,independent,fifty,cluste
 }
 
 
-function threeFourIndependent(inp,oracle,scoreline,independent,fifty,cluster){
-  const votes=[
-    {name:'Oracle Fusion',top:oracle?.top,weight:.22},
-    {name:'Scoreline',top:scoreline?.ranked?.[0]?resultFromScore(scoreline.ranked[0].score):null,weight:.16},
-    {name:'Independent',top:independent?.top,weight:.22},
-    {name:'50-Point',top:fifty?.top,weight:.20},
-    {name:'Pattern Cluster',top:cluster?.top,weight:.20}
-  ].filter(x=>x.top);
-
-  const counts={'1':0,'X':0,'2':0},weighted={'1':0,'X':0,'2':0};
-  votes.forEach(v=>{counts[v.top]++;weighted[v.top]+=v.weight;});
-
-  const order=['1','X','2'].sort((a,b)=>weighted[b]-weighted[a]);
-  const top=order[0],second=order[1],count=counts[top],gap=weighted[top]-weighted[second];
-  const consensus=count>=5?'5/5':count===4?'4/5':count===3?'3/5':count+'/5';
-
-  const market=implied(inp.home,inp.draw,inp.away);
-  const marketTop=['1','X','2'].sort((a,b)=>market[b]-market[a])[0];
-  const marketSupports=marketTop===top;
-  const scorelineSupports=scoreline?.ranked?.[0]?resultFromScore(scoreline.ranked[0].score)===top:false;
-
-  let strength=50*weighted[top];
-  if(count>=4) strength+=7;
-  else if(count===3) strength+=2;
-  if(marketSupports) strength+=3;
-  if(scorelineSupports) strength+=3;
-  if(gap<.06) strength-=8;
-  strength=Math.round(clamp(strength,0,50));
-
-  const clean4=count>=4 && gap>=.10 && marketSupports;
-  const clean3=count===3 && gap>=.08 && marketSupports && scorelineSupports;
-  const status=clean4?'STRONG 4/5':clean3?'QUALIFIED 3/5':count>=3?'CAUTION '+consensus:'NO CONSENSUS';
-
-  return {
-    votes,top,second,count,gap,consensus,strength,status,
-    marketSupports,scorelineSupports,
-    minority:votes.filter(v=>v.top!==top).map(v=>v.name),
-    caution:!clean4&&!clean3
-  };
+function threeFourIndependent(inp){
+  const hist=[
+    ['3/5',19.1,14.8,16.1,'3-1'],['3/5',19.8,12.2,18.0,'0-3'],['3/5',13.9,21.4,14.6,'1-0'],
+    ['3/5',18.9,20.6,10.5,'1-0'],['3/5',21.6,12.7,15.6,'1-0'],['3/5',20.4,13.0,16.6,'0-2'],
+    ['3/5',22.0,19.2,8.8,'1-0'],['3/5',18.9,19.8,11.2,'3-0'],['3/5',18.4,16.6,15.0,'0-1'],
+    ['4/5',15.8,14.4,19.8,'1-3'],['4/5',25.2,15.8,9.0,'1-0'],['4/5',16.2,15.1,18.7,'2-1'],
+    ['4/5',25.9,10.8,13.3,'0-1'],['4/5',14.4,7.9,27.7,'2-0'],['4/5',20.8,13.9,15.3,'4-2']
+  ].map(([group,h,d,a,score])=>{
+    const [hg,ag]=score.split('-').map(Number);
+    return {group,h,d,a,score,result:hg>ag?'1':hg<ag?'2':'X'};
+  });
+  const z=(1/inp.home)+(1/inp.draw)+(1/inp.away);
+  const cur={h:50*(1/inp.home)/z,d:50*(1/inp.draw)/z,a:50*(1/inp.away)/z};
+  const dist=r=>Math.sqrt((r.h-cur.h)**2+(r.d-cur.d)**2+(r.a-cur.a)**2);
+  const nearest=hist.slice().sort((a,b)=>dist(a)-dist(b));
+  const use=nearest.slice(0,7), tally={'1':0,'X':0,'2':0};
+  use.forEach((r,i)=>tally[r.result]+=1/(1+i*.22));
+  const order=['1','X','2'].sort((a,b)=>tally[b]-tally[a]);
+  const top=order[0],second=order[1],total=tally['1']+tally.X+tally['2'];
+  const pct=total?tally[top]/total:0, gap=total?(tally[top]-tally[second])/total:0;
+  const best=nearest[0];
+  const groupCounts={'3/5':0,'4/5':0}; use.slice(0,5).forEach(r=>groupCounts[r.group]++);
+  const group=groupCounts['4/5']>groupCounts['3/5']?'4/5':'3/5';
+  const strength=Math.round(clamp(24 + pct*18 + gap*16,0,50));
+  const status=pct>=.58?'STRONG HISTORY':pct>=.45?'HISTORY LEAN':'CAUTION';
+  return {top,second,pct,gap,strength,status,group,cur,nearest,use,best,hist};
 }
 
-function renderThreeFourIndependent(inp,oracle,scoreline,independent,fifty,cluster){
-  const f=threeFourIndependent(inp,oracle,scoreline,independent,fifty,cluster);
-  byId('threeFourPick').textContent=`${f.status}: ${LABEL[f.top]}`;
+function renderThreeFourIndependent(inp){
+  const f=threeFourIndependent(inp);
+  byId('threeFourPick').textContent=`${f.group} ${f.status}: ${LABEL[f.top]}`;
   byId('threeFourScore').textContent=`${f.strength}/50`;
-  byId('threeFourSummary').textContent=`${f.consensus} consensus for ${LABEL[f.top]}. Weighted lead over ${LABEL[f.second]}: ${(f.gap*100).toFixed(1)} points.`;
-
-  byId('threeFourGrid').innerHTML=f.votes.map(v=>
-    `<div class="three-four-card"><b>${v.name}</b><span>${LABEL[v.top]}${v.top===f.top?' ✓ majority':''}</span></div>`
-  ).join('');
-
+  byId('threeFourSummary').textContent=`Uses ONLY the 15 supplied 3/5–4/5 historical rows. Current odds convert to H ${f.cur.h.toFixed(1)}/50, D ${f.cur.d.toFixed(1)}/50, A ${f.cur.a.toFixed(1)}/50. Nearest historical pattern: ${f.best.group} H ${f.best.h}/50 D ${f.best.d}/50 A ${f.best.a}/50, score ${f.best.score}.`;
+  byId('threeFourGrid').innerHTML=f.use.slice(0,5).map((r,i)=>`<div class="three-four-card"><b>${i+1}. ${r.group} history</b><span>H ${r.h}/50 · D ${r.d}/50 · A ${r.a}/50<br>Score ${r.score} → ${LABEL[r.result]}</span></div>`).join('');
   const w=byId('threeFourWarning');
-  w.className='three-four-warning '+(f.caution?'caution':'strong');
-  w.textContent=f.caution
-    ? `CAUTION: ${f.consensus} is not clean enough. Market support: ${f.marketSupports?'YES':'NO'}; scoreline support: ${f.scorelineSupports?'YES':'NO'}. Minority: ${f.minority.length?f.minority.join(', '):'none'}.`
-    : `ACCEPTABLE: ${f.consensus} for ${LABEL[f.top]}, supported by the market and scoreline. ${f.strength}/50 is decision strength, not probability.`;
-
+  w.className='three-four-warning '+(f.pct>=.45?'strong':'caution');
+  w.textContent=`HISTORY-ONLY SIGNAL: ${Math.round(f.pct*100)}% weighted support for ${LABEL[f.top]} from the nearest supplied records. No Oracle, Scoreline, 50-Point, Pattern Cluster, or other archive history is used.`;
   return f;
 }
 
@@ -728,7 +708,7 @@ function render() {
   const independentRes=renderIndependentOpinion(inp, scorelineRes, r);
   const fiftyRes=renderFiftyPointPredictor(inp, r, scorelineRes, independentRes);
   const clusterRes=renderPatternClusterPredictor(inp);
-  const threeFourRes=renderThreeFourIndependent(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);
+  const threeFourRes=renderThreeFourIndependent(inp);
   const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);
   const dcProbs={"1X":r.out["1"]+r.out.X,"X2":r.out.X+r.out["2"],"12":r.out["1"]+r.out["2"]};
   byId("dc").innerHTML=Object.entries(dcProbs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${LABEL[k]} - ${pct(v)}</span>`).join("");
