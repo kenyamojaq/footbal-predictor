@@ -1,4 +1,4 @@
-name: History Only 3of5 4of5 Predictor
+name: Supplied 3of5 4of5 History Predictor
 on:
   push:
     paths:
@@ -10,16 +10,65 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Convert predictor to history only
-        run: echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCByZQoKcD1QYXRoKCJpbmRleC5odG1sIikKcz1wLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQoKbmV3X2pzID0gcicnJwpmdW5jdGlvbiB0aHJlZUZvdXJJbmRlcGVuZGVudChpbnApewogIGNvbnN0IHJvd3M9KERBVEEuc2NvcmVzfHxbXSkuZmlsdGVyKHI9Pk51bWJlci5pc0Zpbml0ZShyLmhvbWUpJiZOdW1iZXIuaXNGaW5pdGUoci5kcmF3KSYmTnVtYmVyLmlzRmluaXRlKHIuYXdheSkmJnIucmVzdWx0KTsKICBjb25zdCBrZXlzPVsnMScsJ1gnLCcyJ107CgogIGNvbnN0IG5vcm09dj0+ewogICAgY29uc3Qgej0oMS92LmhvbWUpKygxL3YuZHJhdykrKDEvdi5hd2F5KTsKICAgIHJldHVybiB7JzEnOigxL3YuaG9tZSkveix'LCJYIjooMS92LmRyYXcpL3osJzInOigxL3YuYXdheSkveH07CiAgfTsKICBjb25zdCBpcD1ub3JtKGlucCk7CiAgY29uc3QgcmF3RGlzdD1yPT57CiAgICBjb25zdCBkaD0oci5ob21lLWlucC5ob21lKS9NYXRoLm1heChpbnAuaG9tZSwxKTsKICAgIGNvbnN0IGRkPShyLmRyYXctaW5wLmRyYXcpL01hdGgubWF4KGlucC5kcmF3LDEpOwogICAgY29uc3QgZGE9KHIuYXdheS1pbnAuYXdheSkvTWF0aC5tYXgoaW5wLmF3YXksMSk7CiAgICByZXR1cm4gTWF0aC5zcXJ0KGRoKmRoK2RkKmRkK2RhKmRhKTsKICB9OwogIGNvbnN0IHByb2JEaXN0PXI9PnsKICAgIGNvbnN0IHE9bm9ybShyKTsKICAgIHJldHVybiBNYXRoLnNxcnQoKHEuMV0taXAuMV0pKioyKyhxLlgtXGlwLlspKioyKyhxLltdMi1pcC5dMikqKjIpOwogIH07CiAgY29uc3Qgc3VtbWFyaXplPShuYW1lLGFycix3ZWlnaHRGbik9PnsKICAgIGNvbnN0IGM9eycxJzowLCdYJzowLCcyJzowfTsKICAgIGxldCB0b3RhbD0wOwogICAgYXJyLmZvckVhY2goKHIsaSk9PnsKICAgICAgY29uc3Qgdz13ZWlnaHRGbj93ZWlnaHRGbihyLGkpOjE7CiAgICAgIGNbci5yZXN1bHRdKz13OyB0b3RhbCs9dzsKICAgIH0pOwogICAgY29uc3QgcHJvYnM9eycxJzowLCdYJzowLCcyJzowfTsKICAgIGtleXMuZm9yRWFjaChrPT5wcm9ic1trXT10b3RhbD9jW2tdL3RvdGFsOjApOwogICAgY29uc3Qgb3JkZXI9a2V5cy5zbGljZSgpLnNvcnQoKGEsYik9PnByb2JzW2JdLXByb2JzW2FdKTsKICAgIHJldHVybiB7bmFtZSx0b3A6b3JkZXJbMF0sc2Vjb25kOm9yZGVyWzFdLHByb2JzLG46YXJyLmxlbmd0aCxtYXJnaW46cHJvYnNbb3JkZXJbMF1dLXByb2JzW29yZGVyWzFdXX07CiAgfTsKCiAgY29uc3QgcmF3PXJvd3Muc2xpY2UoKS5zb3J0KChhLGIpPT5yYXdEaXN0KGEpLXJhd0Rpc3QoYikpOwogIGNvbnN0IGJ5UHJvYj1yb3dzLnNsaWNlKCkuc29ydCgoYSxiKT0+cHJvYkRpc3QoYSktcHJvYkRpc3QoYikpOwoKICBjb25zdCBmYXZPZj12PT57CiAgICBjb25zdCBhPVtbJzEnLHYuaG9tZV0sWydYJyx2LmRyYXddLFsnMicsdi5hd2F5XV0uc29ydCgoeCx5KT0+eFsxXS15WzFdKTsKICAgIHJldHVybiBhWzBdWzBdOwogIH07CiAgY29uc3QgZmF2PWZhdk9mKGlucCk7CiAgY29uc3Qgc2hhcGU9cm93cy5maWx0ZXIocj0+ZmF2T2Yocik9PT1mYXYpCiAgICAuc29ydCgoYSxiKT0+KHJhd0Rpc3QoYSkrcHJvYkRpc3QoYSkpLShyYXdEaXN0KGIpK3Byb2JEaXN0KGIpKSk7CgogIGNvbnN0IGJhbmQ9cm93cy5maWx0ZXIocj0+CiAgICBNYXRoLmFicyhyLmhvbWUtaW5wLmhvbWUpPD1NYXRoLm1heCguMjIsaW5wLmhvbWUqLjEwKSAmJgogICAgTWF0aC5hYnMoci5kcmF3LWlucC5kcmF3KTw9TWF0aC5tYXgoLjI4LGlucC5kcmF3Ki4xMCkgJiYKICAgIE1hdGguYWJzKHIuYXdheS1pbnAuYXdheSk8PU1hdGgubWF4KC4yMixpbnAuYXdheSouMTApCiAgKS5zb3J0KChhLGIpPT5yYXdEaXN0KGEpLXJhd0Rpc3QoYikpOwoKICBjb25zdCBiZXN0QnlTb3VyY2U9e307CiAgcmF3LmZvckVhY2gocj0+ewogICAgY29uc3Qgc3JjPXIuc291cmNlfHwndW5rbm93bic7CiAgICAoYmVzdEJ5U291cmNlW3NyY118fChiZXN0QnlTb3VyY2Vbc3JjXT1bXSkpOwogICAgaWYoYmVzdEJ5U291cmNlW3NyY10ubGVuZ3RoPDYpYmVzdEJ5U291cmNlW3NyY10ucHVzaChyKTsKICB9KTsKICBjb25zdCBzb3VyY2VCYWxhbmNlZD1PYmplY3QudmFsdWVzKGJlc3RCeVNvdXJjZSkuZmxhdCgpCiAgICAuc29ydCgoYSxiKT0+cmF3RGlzdChhKS1yYXdEaXN0KGIpKS5zbGljZSgwLDMwKTsKCiAgY29uc3QgbGVuc2VzPVsKICAgIHN1bW1hcml6ZSgnTmVhcmVzdCBvZGRzJyxyYXcuc2xpY2UoMCwyNSksKHIsaSk9PjEvKDEraSouMDgpKSwKICAgIHN1bW1hcml6ZSgnSW1wbGllZCBwcm9iYWJpbGl0eScsYnlQcm9iLnNsaWNlKDAsMjUpLChyLGkpPT4xLygxK2kqLjA4KSksCiAgICBzdW1tYXJpemUoJ1NhbWUgbWFya2V0IHNoYXBlJyxzaGFwZS5zbGljZSgwLDI1KSwocixpKT0+MS8oMStpKi4wOCkpLAogICAgc3VtbWFyaXplKCdUaWdodCBvZGRzIGJhbmQnLChiYW5kLmxlbmd0aD49MTA/YmFuZDpyYXcpLnNsaWNlKDAsMjUpLChyLGkpPT4xLygxK2kqLjA4KSksCiAgICBzdW1tYXJpemUoJ1NvdXJjZS1iYWxhbmNlZCBoaXN0b3J5Jywo c291cmNlQmFsYW5jZWQubGVuZ3RoPj0xMD9zb3VyY2VCYWxhbmNlZDpyYXcuc2xpY2UoMCwyNSkpLChyLGkpPT4xLygxK2kqLjA2KSkKICBdOwoKICBjb25zdCBjb3VudHM9eycxJzowLCdYJzowLCcyJzowfTsKICBsZW5zZXMuZm9yRWFjaChsPT5jb3VudHNbbC50b3BdKyspOwogIGNvbnN0IG9yZGVyPWtleXMuc2xpY2UoKS5zb3J0KChhLGIpPT5jb3VudHNbYl0tY291bnRzW2FdIHx8IAogICAgbGVuc2VzLnJlZHVjZSgoeixsKT0+eitsLnByb2JzW2JdLDApLWxlbnNlcy5yZWR1Y2UoKHosbCk9PnotaC5wcm9ic1thXSwwKSk7CiAgY29uc3QgdG9wPW9yZGVyWzBdLHNlY29uZD1vcmRlclsxXSxjb3VudD1jb3VudHNbdG9wXTsKICBjb25zdCBjb25zZW5zdXM9YCR7Y291bnR9LzVgOwogIGNvbnN0IGF2Zz17JzEnOjAsJ1gnOjAsJzInOjB9OwogIGtleXMuZm9yRWFjaChrPT5hdmdba109bGVuc2VzLnJlZHVjZSgoeixsKT0+eitsLnByb2JzW2tdLDApL2xlbnNlcy5sZW5ndGgpOwogIGNvbnN0IGdhcD1hdmdbdG9wXS1hdmdbc2Vjb25kXTsKCiAgbGV0IHN0cmVuZ3RoPTE4ICsgY291bnQqNSArIE1hdGgucm91bmQoZ2FwKjM1KTsKICBpZihjb3VudD49NClzdHJlbmd0aCs9NDsKICBpZihjb3VudD09PTUpc3RyZW5ndGgrPTI7CiAgc3RyZW5ndGg9TWF0aC5yb3VuZChjbGFtcChzdHJlbmd0aCwwLDUwKSk7CgogIGNvbnN0IHN0YXR1cz1jb3VudD49ND8nU1RST05HICcrY29uc2Vuc3VzOmNvdW50PT09Mz8nUVVBTElGSUVEIDMvNSc6J05PIENMRUFSIDMvNSc7CiAgcmV0dXJuIHsKICAgIGxlbnNlcyx0b3Asc2Vjb25kLGNvdW50LGNvbnNlbnN1cyxzdHJlbmd0aCxzdGF0dXMsZ2FwLGF2ZywKICAgIGhpc3RvcnlSb3dzOnJvd3MubGVuZ3RoLAogICAgbmVhcmVzdDpyYXcuc2xpY2UoMCwxMCkKICB9Owp9CgpmdW5jdGlvbiByZW5kZXJUaHJlZUZvdXJJbmRlcGVuZGVudChpbnApewogIGNvbnN0IGY9dGhyZWVGb3VySW5kZXBlbmRlbnQoaW5wKTsKICBieUlkKCd0aHJlZUZvdXJQaWNrJykudGV4dENvbnRlbnQ9YCR7Zi5zdGF0dXN9OiAke0xBQkVMW2YudG9wXX1gOwogIGJ5SWQoJ3RocmVlRm91clNjb3JlJykudGV4dENvbnRlbnQ9YCR7Zi5zdHJlbmd0aH0vNTBgOwogIGJ5SWQoJ3RocmVlRm91clN1bW1hcnknKS50ZXh0Q29udGVudD1gSGlzdG9yeS1vbmx5ICR7Zi5jb25zZW5zdXN9IGNvbnNlbnN1cyBmb3IgJHtMQUJFTFtmLnRvcF19LiAke2YuaGlzdG9yeVJvd3N9IHN1cHBsaWVkIGhpc3RvcmljYWwgbWF0Y2hlcyBhcmUgYXZhaWxhYmxlOyB0aGUgb3RoZXIgcHJlZGljdG9ycyBhcmUgbm90IHVzZWQuIEF2ZXJhZ2UgaGlzdG9yaWNhbCBlZGdlIG92ZXIgJHtMQUJFTFtmLnNlY29uZF19OiAkeyhmLmdhcCoxMDApLnRvRml4ZWQoMSl9IHBvaW50cy5gOwogIGJ5SWQoJ3RocmVlRm91ckdyaWQnKS5pbm5lckhUTUw9Zi5sZW5zZXMubWFwKGw9PmA8ZGl2IGNsYXNzPSJ0aHJlZS1mb3VyLWNhcmQiPjxiPiR7bC5uYW1lfTwvYj48c3Bhbj4ke0xBQkVMW2wudG9wXX0ke2wudG9wPT09Zi50b3A/JyDinJMnOicnfTxicj4ke2wubn0gcm93cyAtICR7KGwucHJvYnNbbC50b3BdKjEwMCkudG9GaXhlZCgxKX0lPC9zcGFuPjwvZGl2PmApLmpvaW4oJycpOwogIGNvbnN0IHc9YnlJZCgndGhyZWVGb3VyV2FybmluZycpOwogIHcuY2xhc3NOYW1lPSd0aHJlZS1mb3VyLXdhcm5pbmcgJysoZi5jb3VudD49Mz8nc3Ryb25nJzonY2F1dGlvbicpOwogIHcudGV4dENvbnRlbnQ9Zi5jb3VudD49MwogICAgP2BJTkRFUEVOREVOVCBISVNUT1JZIFNJR05BTDogJHtmLmNvbnNlbnN1c30gaGlzdG9yaWNhbCBsZW5zZXMgYWdyZWUgb24gJHtMQUJFTFtmLnRvcF19LiAke2Yuc3RyZW5ndGh9LzUwIGlzIGV2aWRlbmNlIHN0cmVuZ3RoLCBub3QgcHJvYmFiaWxpdHkuYAogICAgOmBDQVVUSU9OOiB0aGUgc3VwcGxpZWQgaGlzdG9yeSBkb2VzIG5vdCBwcm9kdWNlIGEgMy81IG9yIDQvNSBhZ3JlZW1lbnQgZm9yIHRoaXMgb2RkcyBwYXR0ZXJuLmA7CiAgcmV0dXJuIGY7Cn0KJycnCgpwYXR0ZXJuID0gcmUuY29tcGlsZShyImZ1bmN0aW9uIHRocmVlRm91ckluZGVwZW5kZW50XChpbnAsb3JhY2xlLHNjb3JlbGluZSxpbmRlcGVuZGVudCxmaWZ0eSxjbHVzdGVyXClcey4qP2Z1bmN0aW9uIHJlbmRlclRocmVlRm91ckluZGVwZW5kZW50XChpbnAsb3JhY2xlLHNjb3JlbGluZSxpbmRlcGVuZGVudCxmaWZ0eSxjbHVzdGVyXClcey4qP1xuXH0iLCByZS5TKQptPXBhdHRlcm4uc2VhcmNoKHMpCmlmIG5vdCBtOgogICAgcmFpc2UgU3lzdGVtRXhpdCgidGhyZWVGb3VyIGZ1bmN0aW9ucyBub3QgZm91bmQiKQpzPXNbOm0uc3RhcnQoKV0rbmV3X2pzK3NbbS5lbmQoKTpdCgpzPXMucmVwbGFjZSgKICAgICJjb25zdCB0aHJlZUZvdXJSZXM9cmVuZGVyVGhyZWVGb3VySW5kZXBlbmRlbnQoaW5wLHIs c2NvcmVsaW5lUmVzLGluZGVwZW5kZW50UmVzLGZpZnR5UmVzLGNsdXN0ZXJSZXMpOyIsCiAgICAiY29uc3QgdGhyZWVGb3VyUmVzPXJlbmRlclRocmVlRm91ckluZGVwZW5kZW50KGlucCk7IgopCnM9cy5yZXBsYWNlKAogICAgIlNwZWNpYWwgY29uc2Vuc3VzIGNoZWNrIGZvciAzLzUgYW5kIDQvNSBzaXR1YXRpb25zLiBJdCBjb21wYXJlcyBPcmFjbGUgRnVzaW9uLCBTY29yZWxpbmUsIEluZGVwZW5kZW50LCA1MC1Qb2ludCBhbmQgUGF0dGVybiBDbHVzdGVyLiIsCiAgICAiSW5kZXBlbmRlbnQgaGlzdG9yeS1vbmx5IGNoZWNrIGZvciAzLzUgYW5kIDQvNSBzaXR1YXRpb25zLiBJdCB1c2VzIG9ubHkgdGhlIGhpc3RvcmljYWwgb2RkcyBhbmQgZmluYWwgcmVzdWx0cyB5b3Ugc3VwcGxpZWQuIgopCnAud3JpdGVfdGV4dChzLGVuY29kaW5nPSJ1dGYtOCIpCnByaW50KCJoaXN0b3J5LW9ubHkgMy81LTQvNSBwcmVkaWN0b3IgaW5zdGFsbGVkIikK' | base64 -d | python3
-      - name: Commit changes
+      - name: Patch predictor
+        shell: bash
         run: |
-          git config user.name "kenyamojaq"
-          git config user.email "kenyamojaq@gmail.com"
-          git add index.html
-          if git diff --cached --quiet; then
-            echo "No changes"
-          else
-            git commit -m "Make 3of5 4of5 predictor history-only"
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          new=r'''function threeFourIndependent(inp){
+            const hist=[
+              ['3/5',19.1,14.8,16.1,'3-1'],['3/5',19.8,12.2,18.0,'0-3'],['3/5',13.9,21.4,14.6,'1-0'],
+              ['3/5',18.9,20.6,10.5,'1-0'],['3/5',21.6,12.7,15.6,'1-0'],['3/5',20.4,13.0,16.6,'0-2'],
+              ['3/5',22.0,19.2,8.8,'1-0'],['3/5',18.9,19.8,11.2,'3-0'],['3/5',18.4,16.6,15.0,'0-1'],
+              ['4/5',15.8,14.4,19.8,'1-3'],['4/5',25.2,15.8,9.0,'1-0'],['4/5',16.2,15.1,18.7,'2-1'],
+              ['4/5',25.9,10.8,13.3,'0-1'],['4/5',14.4,7.9,27.7,'2-0'],['4/5',20.8,13.9,15.3,'4-2']
+            ].map(([group,h,d,a,score])=>{
+              const [hg,ag]=score.split('-').map(Number);
+              return {group,h,d,a,score,result:hg>ag?'1':hg<ag?'2':'X'};
+            });
+            const z=(1/inp.home)+(1/inp.draw)+(1/inp.away);
+            const cur={h:50*(1/inp.home)/z,d:50*(1/inp.draw)/z,a:50*(1/inp.away)/z};
+            const dist=r=>Math.sqrt((r.h-cur.h)**2+(r.d-cur.d)**2+(r.a-cur.a)**2);
+            const nearest=hist.slice().sort((a,b)=>dist(a)-dist(b));
+            const use=nearest.slice(0,7), tally={'1':0,'X':0,'2':0};
+            use.forEach((r,i)=>tally[r.result]+=1/(1+i*.22));
+            const order=['1','X','2'].sort((a,b)=>tally[b]-tally[a]);
+            const top=order[0],second=order[1],total=tally['1']+tally.X+tally['2'];
+            const pct=total?tally[top]/total:0, gap=total?(tally[top]-tally[second])/total:0;
+            const best=nearest[0];
+            const groupCounts={'3/5':0,'4/5':0}; use.slice(0,5).forEach(r=>groupCounts[r.group]++);
+            const group=groupCounts['4/5']>groupCounts['3/5']?'4/5':'3/5';
+            const strength=Math.round(clamp(24 + pct*18 + gap*16,0,50));
+            const status=pct>=.58?'STRONG HISTORY':pct>=.45?'HISTORY LEAN':'CAUTION';
+            return {top,second,pct,gap,strength,status,group,cur,nearest,use,best,hist};
+          }
+
+          function renderThreeFourIndependent(inp){
+            const f=threeFourIndependent(inp);
+            byId('threeFourPick').textContent=`${f.group} ${f.status}: ${LABEL[f.top]}`;
+            byId('threeFourScore').textContent=`${f.strength}/50`;
+            byId('threeFourSummary').textContent=`Uses ONLY the 15 supplied 3/5–4/5 historical rows. Current odds convert to H ${f.cur.h.toFixed(1)}/50, D ${f.cur.d.toFixed(1)}/50, A ${f.cur.a.toFixed(1)}/50. Nearest historical pattern: ${f.best.group} H ${f.best.h}/50 D ${f.best.d}/50 A ${f.best.a}/50, score ${f.best.score}.`;
+            byId('threeFourGrid').innerHTML=f.use.slice(0,5).map((r,i)=>`<div class="three-four-card"><b>${i+1}. ${r.group} history</b><span>H ${r.h}/50 · D ${r.d}/50 · A ${r.a}/50<br>Score ${r.score} → ${LABEL[r.result]}</span></div>`).join('');
+            const w=byId('threeFourWarning');
+            w.className='three-four-warning '+(f.pct>=.45?'strong':'caution');
+            w.textContent=`HISTORY-ONLY SIGNAL: ${Math.round(f.pct*100)}% weighted support for ${LABEL[f.top]} from the nearest supplied records. No Oracle, Scoreline, 50-Point, Pattern Cluster, or other archive history is used.`;
+            return f;
+          }'''
+          pat=r'function threeFourIndependent\([^\)]*\)\{.*?function renderThreeFourIndependent\([^\)]*\)\{.*?\n\}'
+          s2,n=re.subn(pat,new,s,count=1,flags=re.S)
+          if n!=1:
+            raise SystemExit(f'predictor block match count={n}')
+          s2=s2.replace('Special consensus check for 3/5 and 4/5 situations across the five existing predictors.','Uses only your supplied 3/5 and 4/5 history rows; independent of all other predictors.')
+          s2=re.sub(r'renderThreeFourIndependent\(inp\s*,[^;]+\)', 'renderThreeFourIndependent(inp)', s2)
+          p.write_text(s2,encoding='utf-8')
+          PY
+          if ! git diff --quiet -- index.html; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add index.html
+            git commit -m "Use only supplied 3of5 4of5 history"
             git push
           fi
