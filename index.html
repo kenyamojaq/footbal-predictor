@@ -203,7 +203,7 @@ textarea { min-height: 150px; resize: vertical; }
   <div class="three-four-head">
     <div>
       <h2 id="threeFourPick">Awaiting model outputs</h2>
-      <p id="threeFourSummary">Uses only your supplied 3/5 and 4/5 history rows; independent of all other predictors.</p>
+      <p id="threeFourSummary">Runs after the Final Decision Engine, compares its output against your 15 supplied 3/5–4/5 history rows, then gives its own opinion.</p>
     </div>
     <div class="three-four-score">
       <b id="threeFourScore">--/50</b>
@@ -649,7 +649,7 @@ function renderFinalDecisionEngine(inp,oracle,scoreline,independent,fifty,cluste
 }
 
 
-function threeFourIndependent(inp){
+function threeFourIndependent(finalDecision){
   const hist=[
     ['3/5',19.1,14.8,16.1,'3-1'],['3/5',19.8,12.2,18.0,'0-3'],['3/5',13.9,21.4,14.6,'1-0'],
     ['3/5',18.9,20.6,10.5,'1-0'],['3/5',21.6,12.7,15.6,'1-0'],['3/5',20.4,13.0,16.6,'0-2'],
@@ -660,32 +660,67 @@ function threeFourIndependent(inp){
     const [hg,ag]=score.split('-').map(Number);
     return {group,h,d,a,score,result:hg>ag?'1':hg<ag?'2':'X'};
   });
-  const z=(1/inp.home)+(1/inp.draw)+(1/inp.away);
-  const cur={h:50*(1/inp.home)/z,d:50*(1/inp.draw)/z,a:50*(1/inp.away)/z};
-  const dist=r=>Math.sqrt((r.h-cur.h)**2+(r.d-cur.d)**2+(r.a-cur.a)**2);
-  const nearest=hist.slice().sort((a,b)=>dist(a)-dist(b));
-  const use=nearest.slice(0,7), tally={'1':0,'X':0,'2':0};
-  use.forEach((r,i)=>tally[r.result]+=1/(1+i*.22));
+
+  if(!finalDecision || !finalDecision.score){
+    return {ready:false,hist};
+  }
+
+  const engine={
+    h:50*Number(finalDecision.score['1']||0),
+    d:50*Number(finalDecision.score.X||0),
+    a:50*Number(finalDecision.score['2']||0)
+  };
+  const engineTop=finalDecision.top;
+  const agreement=Number(finalDecision.agreement||0);
+  const engineGroup=agreement>=4?'4/5':agreement===3?'3/5':null;
+
+  const dist=r=>Math.sqrt((r.h-engine.h)**2+(r.d-engine.d)**2+(r.a-engine.a)**2);
+  const groupPenalty=r=>engineGroup && r.group!==engineGroup ? 4.5 : 0;
+  const topPenalty=r=>r.result===engineTop ? 0 : 1.5;
+  const ranked=hist.slice().sort((a,b)=>(dist(a)+groupPenalty(a)+topPenalty(a))-(dist(b)+groupPenalty(b)+topPenalty(b)));
+  const use=ranked.slice(0,7);
+  const tally={'1':0,'X':0,'2':0};
+  use.forEach((r,i)=>{
+    const similarity=1/(1+dist(r)/9);
+    const rankWeight=1/(1+i*.18);
+    const groupWeight=engineGroup && r.group===engineGroup ? 1.25 : 1;
+    tally[r.result]+=similarity*rankWeight*groupWeight;
+  });
   const order=['1','X','2'].sort((a,b)=>tally[b]-tally[a]);
-  const top=order[0],second=order[1],total=tally['1']+tally.X+tally['2'];
-  const pct=total?tally[top]/total:0, gap=total?(tally[top]-tally[second])/total:0;
-  const best=nearest[0];
-  const groupCounts={'3/5':0,'4/5':0}; use.slice(0,5).forEach(r=>groupCounts[r.group]++);
-  const group=groupCounts['4/5']>groupCounts['3/5']?'4/5':'3/5';
-  const strength=Math.round(clamp(24 + pct*18 + gap*16,0,50));
-  const status=pct>=.58?'STRONG HISTORY':pct>=.45?'HISTORY LEAN':'CAUTION';
-  return {top,second,pct,gap,strength,status,group,cur,nearest,use,best,hist};
+  const top=order[0],second=order[1];
+  const total=tally['1']+tally.X+tally['2']||1;
+  const support=tally[top]/total;
+  const gap=(tally[top]-tally[second])/total;
+  const agreesWithEngine=top===engineTop;
+  let strength=24+support*17+gap*13+(agreesWithEngine?4:0)+(engineGroup==='4/5'?2:0);
+  strength=Math.round(clamp(strength,0,50));
+  const status=agreesWithEngine
+    ? (support>=.55?'CONFIRMS FINAL ENGINE':'LEAN CONFIRMATION')
+    : (support>=.50?'HISTORY OVERRIDES':'HISTORY DISAGREES');
+
+  return {ready:true,hist,engine,engineTop,engineGroup,agreement,ranked,use,tally,top,second,support,gap,strength,status,agreesWithEngine,best:ranked[0]};
 }
 
-function renderThreeFourIndependent(inp){
-  const f=threeFourIndependent(inp);
-  byId('threeFourPick').textContent=`${f.group} ${f.status}: ${LABEL[f.top]}`;
+function renderThreeFourIndependent(finalDecision){
+  const f=threeFourIndependent(finalDecision);
+  if(!f.ready){
+    byId('threeFourPick').textContent='Awaiting Final Decision Engine';
+    byId('threeFourScore').textContent='--/50';
+    byId('threeFourSummary').textContent='This reviewer runs only after the Final Decision Engine has produced its prediction.';
+    byId('threeFourGrid').innerHTML='';
+    byId('threeFourWarning').textContent='';
+    return f;
+  }
+
+  byId('threeFourPick').textContent=`${f.status}: ${LABEL[f.top]}`;
   byId('threeFourScore').textContent=`${f.strength}/50`;
-  byId('threeFourSummary').textContent=`Uses ONLY the 15 supplied 3/5–4/5 historical rows. Current odds convert to H ${f.cur.h.toFixed(1)}/50, D ${f.cur.d.toFixed(1)}/50, A ${f.cur.a.toFixed(1)}/50. Nearest historical pattern: ${f.best.group} H ${f.best.h}/50 D ${f.best.d}/50 A ${f.best.a}/50, score ${f.best.score}.`;
-  byId('threeFourGrid').innerHTML=f.use.slice(0,5).map((r,i)=>`<div class="three-four-card"><b>${i+1}. ${r.group} history</b><span>H ${r.h}/50 · D ${r.d}/50 · A ${r.a}/50<br>Score ${r.score} → ${LABEL[r.result]}</span></div>`).join('');
+  byId('threeFourSummary').textContent=`Final Engine says ${LABEL[f.engineTop]} with ${f.agreement}/5 agreement and H ${f.engine.h.toFixed(1)}/50, D ${f.engine.d.toFixed(1)}/50, A ${f.engine.a.toFixed(1)}/50. This is compared ONLY with your 15 supplied 3/5–4/5 history records before this reviewer makes its own opinion.`;
+  byId('threeFourGrid').innerHTML=f.use.slice(0,5).map((r,i)=>`<div class="three-four-card"><b>${i+1}. ${r.group} match</b><span>H ${r.h}/50 · D ${r.d}/50 · A ${r.a}/50<br>Score ${r.score} → ${LABEL[r.result]}</span></div>`).join('');
   const w=byId('threeFourWarning');
-  w.className='three-four-warning '+(f.pct>=.45?'strong':'caution');
-  w.textContent=`HISTORY-ONLY SIGNAL: ${Math.round(f.pct*100)}% weighted support for ${LABEL[f.top]} from the nearest supplied records. No Oracle, Scoreline, 50-Point, Pattern Cluster, or other archive history is used.`;
+  w.className='three-four-warning '+(f.agreesWithEngine?'strong':'caution');
+  w.textContent=f.agreesWithEngine
+    ? `HISTORY CHECK CONFIRMS FINAL ENGINE: ${Math.round(f.support*100)}% weighted historical support for ${LABEL[f.top]}. Reviewer decision strength ${f.strength}/50.`
+    : `HISTORY CHECK DISAGREES WITH FINAL ENGINE: Final Engine=${LABEL[f.engineTop]}, 15-row history reviewer=${LABEL[f.top]} with ${Math.round(f.support*100)}% weighted support. Treat this as caution.`;
   return f;
 }
 
@@ -708,8 +743,8 @@ function render() {
   const independentRes=renderIndependentOpinion(inp, scorelineRes, r);
   const fiftyRes=renderFiftyPointPredictor(inp, r, scorelineRes, independentRes);
   const clusterRes=renderPatternClusterPredictor(inp);
-  const threeFourRes=renderThreeFourIndependent(inp);
   const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);
+  const threeFourRes=renderThreeFourIndependent(finalDecision);
   const dcProbs={"1X":r.out["1"]+r.out.X,"X2":r.out.X+r.out["2"],"12":r.out["1"]+r.out["2"]};
   byId("dc").innerHTML=Object.entries(dcProbs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${LABEL[k]} - ${pct(v)}</span>`).join("");
   renderArchive(r.nearScores);
