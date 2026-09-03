@@ -1,0 +1,96 @@
+name: Add 3of5 4of5 Independent Predictor
+on:
+  push:
+    paths:
+      - 'README.md'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add 3of5 4of5 predictor
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          marker='<!-- THREE-FOUR-FIVE-INDEPENDENT -->'
+          if marker in s:
+              print('3/5 4/5 predictor already installed')
+              raise SystemExit(0)
+          html='''
+<!-- THREE-FOUR-FIVE-INDEPENDENT -->
+<section class="panel pad three-four-panel">
+  <div class="title">3/5 – 4/5 Independent Predictor</div>
+  <div class="three-four-head">
+    <div><h2 id="threeFourPick">Awaiting model outputs</h2><p id="threeFourSummary">This predictor is designed specifically for 3/5 and 4/5 consensus situations. It reads the five existing model answers, checks the minority side, and applies a stricter gate before accepting the majority.</p></div>
+    <div class="three-four-score"><b id="threeFourScore">--/50</b><span>Independent strength</span></div>
+  </div>
+  <div class="three-four-grid" id="threeFourGrid"></div>
+  <div class="three-four-warning" id="threeFourWarning"></div>
+</section>
+'''
+          css='''
+.three-four-panel{margin-top:16px;border:1px solid var(--blue);background:linear-gradient(180deg,#141820,#0d1118)}
+.three-four-head{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}.three-four-head h2{margin:0 0 6px;font-size:28px}.three-four-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.three-four-score{text-align:center;border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:12px 18px;min-width:120px}.three-four-score b{display:block;font-size:30px;color:var(--blue)}.three-four-score span{color:var(--muted);font-size:11px}.three-four-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:14px}.three-four-card{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:10px;min-height:78px}.three-four-card b{display:block;font-size:13px;margin-bottom:5px}.three-four-card span{color:var(--muted);font-size:11px;line-height:1.35}.three-four-warning{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:11px;background:var(--panel2);font-size:12px;line-height:1.45;color:var(--muted)}.three-four-warning.strong{border-color:var(--home);color:var(--text)}.three-four-warning.caution{border-color:var(--away);color:var(--away)}
+@media(max-width:900px){.three-four-head,.three-four-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.three-four-head,.three-four-grid{grid-template-columns:1fr}.three-four-score{justify-self:start}}
+'''
+          s=s.replace('</style>',css+'\n</style>',1)
+          anchor='<!-- FINAL-DECISION-ENGINE -->'
+          s=s.replace(anchor,html+'\n'+anchor,1)
+          js='''
+function threeFourIndependent(inp,oracle,scoreline,independent,fifty,cluster){
+  const votes=[
+    {name:'Oracle Fusion',top:oracle?.top,weight:.22},
+    {name:'Scoreline',top:scoreline?.ranked?.[0]?resultFromScore(scoreline.ranked[0].score):null,weight:.16},
+    {name:'Independent',top:independent?.top,weight:.22},
+    {name:'50-Point',top:fifty?.top,weight:.20},
+    {name:'Pattern Cluster',top:cluster?.top,weight:.20}
+  ].filter(x=>x.top);
+  const counts={'1':0,'X':0,'2':0}, weighted={'1':0,'X':0,'2':0};
+  votes.forEach(v=>{counts[v.top]++;weighted[v.top]+=v.weight;});
+  const order=['1','X','2'].sort((a,b)=>weighted[b]-weighted[a]);
+  const top=order[0], second=order[1], count=counts[top], weightedGap=weighted[top]-weighted[second];
+  const consensus=count===5?'5/5':count===4?'4/5':count===3?'3/5':count+'/5';
+  const market=implied(inp.home,inp.draw,inp.away);
+  const marketTop=['1','X','2'].sort((a,b)=>market[b]-market[a])[0];
+  const marketSupports=marketTop===top;
+  const scorelineSupports=scoreline?.ranked?.[0] ? resultFromScore(scoreline.ranked[0].score)===top : false;
+  const minority=votes.filter(v=>v.top!==top).map(v=>v.name);
+  let strength=50*(weighted[top]);
+  if(count>=4) strength+=7; else if(count===3) strength+=2;
+  if(marketSupports) strength+=3;
+  if(scorelineSupports) strength+=3;
+  if(weightedGap<.06) strength-=8;
+  if(count===3 && minority.length===2 && new Set(votes.filter(v=>v.top!==top).map(v=>v.top)).size===1) strength-=3;
+  strength=Math.round(clamp(strength,0,50));
+  const clean4=count>=4 && weightedGap>=.10 && marketSupports;
+  const clean3=count===3 && weightedGap>=.08 && marketSupports && scorelineSupports;
+  const status=clean4?'STRONG 4/5':clean3?'QUALIFIED 3/5':count>=3?'CAUTION '+consensus:'NO CONSENSUS';
+  const caution=!clean4&&!clean3;
+  return {votes,counts,weighted,order,top,second,count,consensus,weightedGap,marketTop,marketSupports,scorelineSupports,minority,strength,status,caution};
+}
+function renderThreeFourIndependent(inp,oracle,scoreline,independent,fifty,cluster){
+  const f=threeFourIndependent(inp,oracle,scoreline,independent,fifty,cluster);
+  byId('threeFourPick').textContent=`${f.status}: ${LABEL[f.top]}`;
+  byId('threeFourScore').textContent=`${f.strength}/50`;
+  byId('threeFourSummary').textContent=`${f.count}/${f.votes.length} model outputs choose ${LABEL[f.top]}. Weighted lead over ${LABEL[f.second]} is ${(f.weightedGap*100).toFixed(1)} points. This predictor gives special treatment to 3/5 and 4/5 situations instead of blindly accepting a majority.`;
+  byId('threeFourGrid').innerHTML=f.votes.map(v=>`<div class="three-four-card"><b>${v.name}</b><span>${LABEL[v.top]}${v.top===f.top?' ✓ majority':''}</span></div>`).join('');
+  const w=byId('threeFourWarning');w.className='three-four-warning '+(f.caution?'caution':'strong');
+  w.textContent=f.caution?`CAUTION: ${f.consensus} is not clean enough. Market support: ${f.marketSupports?'YES':'NO'}. Scoreline support: ${f.scorelineSupports?'YES':'NO'}. Minority models: ${f.minority.length?f.minority.join(', '):'none'}. Treat ${f.strength}/50 as decision strength, not probability.`:`ACCEPTABLE CONSENSUS: ${f.consensus} for ${LABEL[f.top]}, with market and scoreline support. Independent strength ${f.strength}/50. Still not a guarantee.`;
+  return f;
+}
+'''
+          s=s.replace('function render() {',js+'\nfunction render() {',1)
+          s=s.replace('  const clusterRes=renderPatternClusterPredictor(inp);','  const clusterRes=renderPatternClusterPredictor(inp);\n  const threeFourRes=renderThreeFourIndependent(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);',1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit patched predictor
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if git diff --cached --quiet; then echo 'No changes to commit'; else git commit -m 'Add 3of5 4of5 independent predictor'; git push; fi
