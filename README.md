@@ -34,6 +34,7 @@ It ignores Under/Over columns, percentage columns, and duplicate rows.
 - 50-Point Independent Predictor
 - Pattern Cluster Predictor
 - Final Decision Engine that reads all predictor outputs and produces a final 1-50 decision-strength score
+- New 3/5 – 4/5 Independent Predictor with special consensus gating
 - Copyable prompt for Claude, Grok, Kimi, or ChatGPT second opinion
 
 ## Downloadable App
