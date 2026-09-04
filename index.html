@@ -226,6 +226,18 @@ textarea { min-height: 150px; resize: vertical; }
   <div class="final-warning" id="finalDecisionWarning"></div>
 </section>
 
+<!-- FINAL-DRIFT-COMBO -->
+<section class="panel pad final-engine-panel">
+  <div class="title">Final + Drift Combined Predictor</div>
+  <div class="final-engine-head">
+    <div><h2 id="finalDriftPick">Awaiting Final + Drift</h2><p id="finalDriftSummary">Runs after the Final Decision Engine and Drift-Compression Formula Predictor, then combines those two opinions only.</p></div>
+    <div class="final-score"><b id="finalDriftScore">--/50</b><span>Combined Score</span></div>
+  </div>
+  <div class="final-bars" id="finalDriftBars"></div>
+  <div class="final-grid" id="finalDriftDetails"></div>
+  <div class="final-warning" id="finalDriftWarning"></div>
+</section>
+
   <section class="panel pad scoreline-panel">
     <div class="scoreline-head">
       <div>
@@ -723,6 +735,56 @@ function renderFinalDecisionEngine(inp,oracle,scoreline,independent,fifty,cluste
 }
 
 
+function finalDriftCombinedPredictor(finalDecision, drift){
+  if(!finalDecision || !finalDecision.score || !drift || !drift.calc) return {ready:false};
+  const keys=["1","X","2"], score={"1":0,"X":0,"2":0};
+  keys.forEach(k=>{
+    const driftScore=drift.calc.out[k]*.78 + (drift.result===k?.22:0);
+    score[k]=finalDecision.score[k]*.60 + driftScore*.40;
+  });
+  const total=score["1"]+score.X+score["2"]||1;
+  keys.forEach(k=>score[k]/=total);
+  const order=[...keys].sort((a,b)=>score[b]-score[a]);
+  const top=order[0], second=order[1], gap=score[top]-score[second];
+  const finalAgrees=finalDecision.top===top;
+  const driftAgrees=drift.result===top || drift.top===top;
+  const hardConflict=finalDecision.top!==drift.result;
+  const driftDanger=(drift.calc.homeDrift+drift.calc.awayCompression)/2;
+  const confidence=clamp(score[top]*.48+gap*.95+(finalAgrees?.12:0)+(driftAgrees?.12:0)+(hardConflict?-.16:0)+drift.reliability*.18,0,1);
+  const decision=Math.round(confidence*50);
+  const caution=hardConflict || gap<.04 || decision<31 || drift.caution;
+  return {ready:true,score,top,second,gap,finalAgrees,driftAgrees,hardConflict,driftDanger,confidence,decision,caution};
+}
+function renderFinalDriftCombined(finalDecision, drift){
+  const f=finalDriftCombinedPredictor(finalDecision, drift);
+  if(!f.ready){
+    byId('finalDriftPick').textContent='Awaiting Final + Drift';
+    byId('finalDriftScore').textContent='--/50';
+    byId('finalDriftSummary').textContent='Runs after both required predictors are ready.';
+    byId('finalDriftBars').innerHTML='';
+    byId('finalDriftDetails').innerHTML='';
+    byId('finalDriftWarning').textContent='';
+    return f;
+  }
+  byId('finalDriftPick').textContent=`${LABEL[f.top]} - ${f.caution?'CAUTION':'COMBINED PICK'}`;
+  byId('finalDriftScore').textContent=`${f.decision}/50`;
+  byId('finalDriftSummary').textContent=`Combined from Final Decision Engine and Drift-Compression only. ${LABEL[f.top]} leads ${LABEL[f.second]} by ${pct(f.gap)}.`;
+  byId('finalDriftBars').innerHTML=["1","X","2"].map(k=>`<div class="scoreline-row"><b>${LABEL[k].replace(' WIN','')}</b><div class="track"><div class="fill" style="background:${COLORS[k]};width:${(f.score[k]*100).toFixed(1)}%"></div></div><span>${(f.score[k]*50).toFixed(1)}/50</span></div>`).join('');
+  byId('finalDriftDetails').innerHTML=[
+    ['Final Engine', finalDecision.top, `${finalDecision.decision}/50`],
+    ['Drift Result', drift.result, drift.score],
+    ['Drift Top %', drift.top, pct(drift.calc.out[drift.top])],
+    ['Conflict', f.hardConflict?null:f.top, f.hardConflict?'YES - reduce/skip':'No hard conflict'],
+    ['Drift danger', f.top, pct(f.driftDanger)]
+  ].map(([name,pick,detail])=>`<div class="final-card"><b>${name}</b><span>${pick?LABEL[pick]:detail}<br>${detail}</span></div>`).join('');
+  const w=byId('finalDriftWarning');
+  w.className='final-warning '+(f.caution?'caution':'strong');
+  w.textContent=f.caution
+    ? `CAUTION / NO BET CHECK: Final Engine says ${LABEL[finalDecision.top]}, Drift score result says ${LABEL[drift.result]} (${drift.score}). Combined strength is ${f.decision}/50.`
+    : `FINAL + DRIFT AGREE WELL: combined pick is ${LABEL[f.top]} with ${f.decision}/50 strength. Still treat it as a guide, not a guarantee.`;
+  return f;
+}
+
 function threeFourIndependent(finalDecision){
   const hist=[
     ['3/5',19.1,14.8,16.1,'3-1'],['3/5',19.8,12.2,18.0,'0-3'],['3/5',13.9,21.4,14.6,'1-0'],
@@ -817,9 +879,10 @@ function render() {
   const independentRes=renderIndependentOpinion(inp, scorelineRes, r);
   const fiftyRes=renderFiftyPointPredictor(inp, r, scorelineRes, independentRes);
   const clusterRes=renderPatternClusterPredictor(inp);
-  const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);
-  const threeFourRes=renderThreeFourIndependent(finalDecision);
   const twoBetRes=renderTwoBetPatternPredictor(inp);
+  const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);
+  const finalDriftRes=renderFinalDriftCombined(finalDecision,twoBetRes);
+  const threeFourRes=renderThreeFourIndependent(finalDecision);
   const dcProbs={"1X":r.out["1"]+r.out.X,"X2":r.out.X+r.out["2"],"12":r.out["1"]+r.out["2"]};
   byId("dc").innerHTML=Object.entries(dcProbs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${LABEL[k]} - ${pct(v)}</span>`).join("");
   renderArchive(r.nearScores);
@@ -828,7 +891,8 @@ function render() {
   const fiftyText=fiftyRes ? ` 50-point independent predictor: ${LABEL[fiftyRes.top]} with Home ${fiftyRes.points["1"]}/50, Draw ${fiftyRes.points.X}/50, Away ${fiftyRes.points["2"]}/50.` : "";
   const clusterText=clusterRes ? ` Pattern cluster predictor: ${LABEL[clusterRes.top]} at ${pct(clusterRes.out[clusterRes.top])}, cluster ${clusterRes.name}, ${clusterRes.exactCount} matching rows.` : "";
   const twoBetText=twoBetRes ? ` Drift-compression formula predictor: formula score ${twoBetRes.score}, result ${LABEL[twoBetRes.result]}, formula probabilities Home ${pct(twoBetRes.calc.out["1"])}, Draw ${pct(twoBetRes.calc.out.X)}, Away ${pct(twoBetRes.calc.out["2"])}, home drift ${pct(twoBetRes.calc.homeDrift)}, away compression ${pct(twoBetRes.calc.awayCompression)}, reliability ${pct(twoBetRes.reliability)}.` : "";
-  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText}${clusterText}${twoBetText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
+  const finalDriftText=finalDriftRes && finalDriftRes.ready ? ` Final + Drift combined predictor: ${LABEL[finalDriftRes.top]} with ${finalDriftRes.decision}/50 strength, gap ${pct(finalDriftRes.gap)}, caution ${finalDriftRes.caution?'yes':'no'}.` : "";
+  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText}${clusterText}${twoBetText}${finalDriftText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
   byId("promptBox").value=prompt;
 }
 function renderArchive(rows=null) {
