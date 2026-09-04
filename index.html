@@ -247,6 +247,7 @@ textarea { min-height: 150px; resize: vertical; }
         <div class="independent-box" id="independentBox"><h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p></div>
         <div class="independent-box" id="fiftyBox"><h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p></div>
         <div class="independent-box" id="clusterBox"><h3>Pattern Cluster Predictor</h3><p>Run Oracle Fusion to compare this match with its closest odds-pattern cluster.</p></div>
+        <div class="independent-box" id="twoBetBox"><h3>Two-Bet Percentage Predictor</h3><p>Run Oracle Fusion to compare this match with your two percentage anchor bets.</p></div>
       </div>
     </div>
     <div class="scoreline-table" id="scorelineMatches"></div>
@@ -276,6 +277,10 @@ const byId=id=>document.getElementById(id);
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const COLORS={"1":"var(--home)","X":"var(--draw)","2":"var(--away)"};
 const LABEL={"1":"HOME WIN","X":"DRAW","2":"AWAY WIN","1X":"HOME OR DRAW","X2":"DRAW OR AWAY","12":"NO DRAW"};
+const TWO_BET_PATTERNS=[
+  {home:1.78, draw:3.60, away:4.80, pct:{"1":.502,"X":.292,"2":.206}, score:"0-1"},
+  {home:1.89, draw:3.55, away:4.20, pct:{"1":.508,"X":.263,"2":.229}, score:"2-1"}
+];
 
 function implied(h,d,a) {
   const raw={"1":1/h,"X":1/d,"2":1/a};
@@ -527,6 +532,45 @@ function renderPatternClusterPredictor(inp){
   byId("clusterBox").innerHTML=`<h3 class="${cls}">Pattern Cluster Predictor: ${LABEL[cp.top]}</h3><p>${cp.name}. ${cp.exactCount} matching cluster rows found. ${LABEL[cp.top]} leads ${LABEL[cp.second]} by ${pct(cp.gap)}. Reliability ${pct(cp.reliability)}. ${cp.caution?"Caution: cluster is thin or the result gap is too small.":"Cluster is strong enough to support this pick."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
   return cp;
 }
+function twoBetPercentShape(inp){
+  const market=implied(inp.home,inp.draw,inp.away);
+  const avgAnchor={"1":0,"X":0,"2":0}, avgMarket={"1":0,"X":0,"2":0};
+  TWO_BET_PATTERNS.forEach(t=>{
+    const m=implied(t.home,t.draw,t.away);
+    ["1","X","2"].forEach(k=>{
+      avgAnchor[k]+=t.pct[k]/TWO_BET_PATTERNS.length;
+      avgMarket[k]+=m[k]/TWO_BET_PATTERNS.length;
+    });
+  });
+  const adjusted={"1":0,"X":0,"2":0};
+  ["1","X","2"].forEach(k=>adjusted[k]=Math.max(.04, market[k]+(avgAnchor[k]-avgMarket[k])));
+  const total=adjusted["1"]+adjusted.X+adjusted["2"]||1;
+  ["1","X","2"].forEach(k=>adjusted[k]/=total);
+  return adjusted;
+}
+function twoBetPatternPredictor(inp){
+  const current=twoBetPercentShape(inp);
+  const ranked=TWO_BET_PATTERNS.map(t=>{
+    const oddsGap=Math.sqrt(Math.pow((inp.home-t.home)/.35,2)+Math.pow((inp.draw-t.draw)/.45,2)+Math.pow((inp.away-t.away)/1.15,2));
+    const pctGap=Math.sqrt(Math.pow((current["1"]-t.pct["1"])/.06,2)+Math.pow((current.X-t.pct.X)/.06,2)+Math.pow((current["2"]-t.pct["2"])/.06,2));
+    const distance=oddsGap*.45+pctGap*.55;
+    return {...t, oddsGap, pctGap, distance};
+  }).sort((a,b)=>a.distance-b.distance);
+  const best=ranked[0], second=ranked[1];
+  const result=resultFromScore(best.score);
+  const closeness=clamp(1-best.distance/2.9,0,1);
+  const separation=second ? clamp((second.distance-best.distance)/1.8,0,1) : 0;
+  const reliability=clamp(closeness*.72+separation*.28,0,1);
+  const caution=reliability<.48 || best.distance>1.65;
+  return {current, best, second, result, closeness, separation, reliability, caution};
+}
+function renderTwoBetPatternPredictor(inp){
+  const tb=twoBetPatternPredictor(inp);
+  const cls=tb.caution ? "scoreline-nobet" : "";
+  const rows=["1","X","2"].map(k=>`<div class="scoreline-row"><b>${LABEL[k].replace(" WIN","")}</b><div class="track"><div class="fill" style="background:${COLORS[k]};width:${pct(tb.current[k])}"></div></div><span>${pct(tb.current[k])}</span></div>`).join("");
+  byId("twoBetBox").innerHTML=`<h3 class="${cls}">Two-Bet Percentage Predictor: ${tb.best.score} / ${LABEL[tb.result]}</h3><p>Closest anchor is H ${fmt(tb.best.home)}, D ${fmt(tb.best.draw)}, A ${fmt(tb.best.away)} with percentage shape H ${(tb.best.pct["1"]*100).toFixed(1)}%, D ${(tb.best.pct.X*100).toFixed(1)}%, A ${(tb.best.pct["2"]*100).toFixed(1)}%. Current calculated shape is H ${(tb.current["1"]*100).toFixed(1)}%, D ${(tb.current.X*100).toFixed(1)}%, A ${(tb.current["2"]*100).toFixed(1)}%. Reliability ${pct(tb.reliability)}. ${tb.caution?"Caution: this match is not close enough to the two anchor bets, so treat it as weak reference / NO BET.":"Good anchor match: this supports the closest score pattern."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
+  return tb;
+}
 function scorelinePredict(uh, ud, ua, us1, us2, us3){
   const weighted={}, distances=[], picks=[us1,us2,us3].filter(Boolean);
   const exactRows=[];
@@ -567,6 +611,7 @@ function renderScoreline(inp, oracleScores, oracleResult){
     byId("independentBox").innerHTML='<h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p>';
     byId("fiftyBox").innerHTML='<h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p>';
     byId("clusterBox").innerHTML='<h3>Pattern Cluster Predictor</h3><p>Run Oracle Fusion to compare this match with its closest odds-pattern cluster.</p>';
+    byId("twoBetBox").innerHTML='<h3>Two-Bet Percentage Predictor</h3><p>Run Oracle Fusion to compare this match with your two percentage anchor bets.</p>';
     byId("scorelineMatches").innerHTML='';
     return null;
   }
@@ -745,6 +790,7 @@ function render() {
   const clusterRes=renderPatternClusterPredictor(inp);
   const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);
   const threeFourRes=renderThreeFourIndependent(finalDecision);
+  const twoBetRes=renderTwoBetPatternPredictor(inp);
   const dcProbs={"1X":r.out["1"]+r.out.X,"X2":r.out.X+r.out["2"],"12":r.out["1"]+r.out["2"]};
   byId("dc").innerHTML=Object.entries(dcProbs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${LABEL[k]} - ${pct(v)}</span>`).join("");
   renderArchive(r.nearScores);
@@ -752,7 +798,8 @@ function render() {
   const independentText=independentRes ? ` Independent result opinion: ${LABEL[independentRes.top]} at ${pct(independentRes.out[independentRes.top])}, reliability ${pct(independentRes.reliability)}.` : "";
   const fiftyText=fiftyRes ? ` 50-point independent predictor: ${LABEL[fiftyRes.top]} with Home ${fiftyRes.points["1"]}/50, Draw ${fiftyRes.points.X}/50, Away ${fiftyRes.points["2"]}/50.` : "";
   const clusterText=clusterRes ? ` Pattern cluster predictor: ${LABEL[clusterRes.top]} at ${pct(clusterRes.out[clusterRes.top])}, cluster ${clusterRes.name}, ${clusterRes.exactCount} matching rows.` : "";
-  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText}${clusterText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
+  const twoBetText=twoBetRes ? ` Two-bet percentage predictor: closest anchor score ${twoBetRes.best.score}, result ${LABEL[twoBetRes.result]}, reliability ${pct(twoBetRes.reliability)}.` : "";
+  const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText}${clusterText}${twoBetText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
   byId("promptBox").value=prompt;
 }
 function renderArchive(rows=null) {
