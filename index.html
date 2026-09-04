@@ -247,7 +247,7 @@ textarea { min-height: 150px; resize: vertical; }
         <div class="independent-box" id="independentBox"><h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p></div>
         <div class="independent-box" id="fiftyBox"><h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p></div>
         <div class="independent-box" id="clusterBox"><h3>Pattern Cluster Predictor</h3><p>Run Oracle Fusion to compare this match with its closest odds-pattern cluster.</p></div>
-        <div class="independent-box" id="twoBetBox"><h3>Two-Bet Formula Predictor</h3><p>Run Oracle Fusion to calculate with the formula learned from your two reference bets.</p></div>
+        <div class="independent-box" id="twoBetBox"><h3>Drift-Compression Formula Predictor</h3><p>Run Oracle Fusion to calculate home drift, away compression, and the score curve learned from your reference bets.</p></div>
       </div>
     </div>
     <div class="scoreline-table" id="scorelineMatches"></div>
@@ -279,7 +279,8 @@ const COLORS={"1":"var(--home)","X":"var(--draw)","2":"var(--away)"};
 const LABEL={"1":"HOME WIN","X":"DRAW","2":"AWAY WIN","1X":"HOME OR DRAW","X2":"DRAW OR AWAY","12":"NO DRAW"};
 const TWO_BET_PATTERNS=[
   {home:1.78, draw:3.60, away:4.80, pct:{"1":.502,"X":.292,"2":.206}, score:"0-1"},
-  {home:1.89, draw:3.55, away:4.20, pct:{"1":.508,"X":.263,"2":.229}, score:"2-1"}
+  {home:1.89, draw:3.55, away:4.20, pct:{"1":.508,"X":.263,"2":.229}, score:"2-1"},
+  {home:1.99, draw:3.50, away:3.95, pct:null, score:"0-2"}
 ];
 
 function implied(h,d,a) {
@@ -532,52 +533,71 @@ function renderPatternClusterPredictor(inp){
   byId("clusterBox").innerHTML=`<h3 class="${cls}">Pattern Cluster Predictor: ${LABEL[cp.top]}</h3><p>${cp.name}. ${cp.exactCount} matching cluster rows found. ${LABEL[cp.top]} leads ${LABEL[cp.second]} by ${pct(cp.gap)}. Reliability ${pct(cp.reliability)}. ${cp.caution?"Caution: cluster is thin or the result gap is too small.":"Cluster is strong enough to support this pick."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
   return cp;
 }
+function lagrangeScore(x, values){
+  const xs=TWO_BET_PATTERNS.map(r=>r.home);
+  return values.reduce((sum,y,i)=>{
+    let term=y;
+    xs.forEach((vx,j)=>{ if(i!==j) term *= (x-vx)/(xs[i]-vx); });
+    return sum+term;
+  },0);
+}
 function twoBetFormulaPercent(inp){
   const market=implied(inp.home,inp.draw,inp.away);
-  const refA=TWO_BET_PATTERNS[0], refB=TWO_BET_PATTERNS[1];
+  const refA=TWO_BET_PATTERNS[0], refB=TWO_BET_PATTERNS[1], refC=TWO_BET_PATTERNS[2];
   const baseA=implied(refA.home,refA.draw,refA.away);
   const baseB=implied(refB.home,refB.draw,refB.away);
-  const span=refB.home-refA.home || .01;
-  const t=clamp((inp.home-refA.home)/span,-1.5,2.5);
+  const impliedC=implied(refC.home,refC.draw,refC.away);
+  const t=clamp((inp.home-refA.home)/(refC.home-refA.home || .01),-.75,1.75);
+  const homeDrift=clamp((inp.home-refB.home)/(refC.home-refB.home || .01),0,1.7);
+  const awayCompression=clamp((refB.away-inp.away)/(refB.away-refC.away || .01),0,1.7);
+  const driftLoad=clamp((homeDrift+awayCompression)/1.3,0,1.4);
+  const drawPressure=clamp((refA.draw-inp.draw)/(refA.draw-refC.draw || .01),0,1.4)*driftLoad;
+  const fade=clamp((homeDrift*.52+awayCompression*.36+drawPressure*.12),0,1.8);
   const out={"1":0,"X":0,"2":0};
   ["1","X","2"].forEach(k=>{
     const deltaA=refA.pct[k]-baseA[k];
     const deltaB=refB.pct[k]-baseB[k];
-    const learnedDelta=deltaA+(deltaB-deltaA)*t;
+    const learnedDelta=deltaA+(deltaB-deltaA)*clamp((inp.home-refA.home)/(refB.home-refA.home || .01),-1,2);
     out[k]=Math.max(.04, market[k]+learnedDelta);
   });
+  out["1"]-=fade*.135;
+  out["2"]+=fade*.115;
+  out.X+=drawPressure*.020-homeDrift*.012;
+  ["1","X","2"].forEach(k=>out[k]=Math.max(.04,out[k]));
   const total=out["1"]+out.X+out["2"]||1;
   ["1","X","2"].forEach(k=>out[k]/=total);
-  return {market, out, t, baseA, baseB};
+  return {market, out, t, homeDrift, awayCompression, drawPressure, fade, impliedC};
 }
-function twoBetFormulaScore(calc){
-  const refA=TWO_BET_PATTERNS[0], refB=TWO_BET_PATTERNS[1];
-  const [aH,aA]=refA.score.split("-").map(Number);
-  const [bH,bA]=refB.score.split("-").map(Number);
-  const t=clamp(calc.t,0,1);
-  const homePressure=(calc.out["1"]-.505)*3.8-(calc.out["2"]-.218)*1.4;
-  const drawPressure=(calc.out.X-.278)*2.1;
-  let h=Math.round(aH+(bH-aH)*t+homePressure-drawPressure*.45);
-  let a=Math.round(aA+(bA-aA)*t+(calc.out["2"]-.218)*3.0+drawPressure*.15);
-  h=clamp(h,0,4);
-  a=clamp(a,0,4);
+function twoBetFormulaScore(calc, inp){
+  const homeGoals=TWO_BET_PATTERNS.map(r=>+r.score.split("-")[0]);
+  const awayGoals=TWO_BET_PATTERNS.map(r=>+r.score.split("-")[1]);
+  const x=clamp(inp.home,1.72,2.08);
+  const driftAttack=calc.homeDrift+calc.awayCompression*.9;
+  let h=lagrangeScore(x, homeGoals)-calc.fade*.55;
+  let a=lagrangeScore(x, awayGoals)+calc.awayCompression*.25+calc.homeDrift*.18;
+  if(driftAttack>.95 && calc.out["2"]>=.255){ h=Math.min(h,.45); a=Math.max(a,1.75); }
+  if(inp.home<=1.82 && inp.away>=4.55){ h=Math.min(h,.35); a=Math.max(a,1.05); }
+  if(driftAttack<.75 && Math.abs(calc.out["1"]-calc.out["2"])<.06 && calc.drawPressure>.65){ h=Math.max(h,.85); a=Math.max(a,.85); }
+  h=clamp(Math.round(h),0,4);
+  a=clamp(Math.round(a),0,4);
   return `${h}-${a}`;
 }
 function twoBetPatternPredictor(inp){
   const calc=twoBetFormulaPercent(inp);
-  const score=twoBetFormulaScore(calc);
+  const score=twoBetFormulaScore(calc, inp);
   const order=["1","X","2"].sort((a,b)=>calc.out[b]-calc.out[a]);
   const top=order[0], second=order[1], gap=calc.out[top]-calc.out[second];
-  const referenceZone=calc.t>=-.35 && calc.t<=1.35 && inp.draw>=3.25 && inp.draw<=3.9 && inp.away>=3.5 && inp.away<=5.3;
-  const reliability=clamp((referenceZone?.22:.02)+calc.out[top]*.48+gap*.95,0,1);
-  const caution=!referenceZone || gap<.045 || reliability<.42;
+  const referenceZone=calc.t>=-.35 && calc.t<=1.35 && inp.draw>=3.25 && inp.draw<=3.9 && inp.away>=3.65 && inp.away<=5.3;
+  const danger=clamp((calc.homeDrift+calc.awayCompression)/2,0,1);
+  const reliability=clamp((referenceZone?.20:.02)+calc.out[top]*.42+gap*.80+danger*.14,0,1);
+  const caution=!referenceZone || gap<.035 || reliability<.40;
   return {calc, score, result:resultFromScore(score), top, second, gap, referenceZone, reliability, caution};
 }
 function renderTwoBetPatternPredictor(inp){
   const tb=twoBetPatternPredictor(inp);
   const cls=tb.caution ? "scoreline-nobet" : "";
   const rows=["1","X","2"].map(k=>`<div class="scoreline-row"><b>${LABEL[k].replace(" WIN","")}</b><div class="track"><div class="fill" style="background:${COLORS[k]};width:${pct(tb.calc.out[k])}"></div></div><span>${pct(tb.calc.out[k])}</span></div>`).join("");
-  byId("twoBetBox").innerHTML=`<h3 class="${cls}">Two-Bet Formula Predictor: ${tb.score} / ${LABEL[tb.result]}</h3><p>Formula output is H ${(tb.calc.out["1"]*100).toFixed(1)}%, D ${(tb.calc.out.X*100).toFixed(1)}%, A ${(tb.calc.out["2"]*100).toFixed(1)}%. It uses normal implied odds first, then applies the correction learned from your two reference bets. ${LABEL[tb.top]} leads ${LABEL[tb.second]} by ${pct(tb.gap)}. Reliability ${pct(tb.reliability)}. ${tb.caution?"Caution: this is outside the strongest reference zone or the formula gap is small, so treat as weak reference / NO BET.":"Formula zone is clean enough to support this score pattern."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
+  byId("twoBetBox").innerHTML=`<h3 class="${cls}">Drift-Compression Formula Predictor: ${tb.score} / ${LABEL[tb.result]}</h3><p>Formula output is H ${(tb.calc.out["1"]*100).toFixed(1)}%, D ${(tb.calc.out.X*100).toFixed(1)}%, A ${(tb.calc.out["2"]*100).toFixed(1)}%. Home drift ${(tb.calc.homeDrift*100).toFixed(0)}%, away compression ${(tb.calc.awayCompression*100).toFixed(0)}%, draw pressure ${(tb.calc.drawPressure*100).toFixed(0)}%. ${LABEL[tb.top]} leads ${LABEL[tb.second]} by ${pct(tb.gap)}. Reliability ${pct(tb.reliability)}. ${tb.caution?"Caution: outside the strongest reference zone or the formula gap is small, so treat as weak reference / NO BET.":"Formula zone is clean enough to support this score pattern."}</p><div class="scoreline-bars" style="margin-top:10px">${rows}</div>`;
   return tb;
 }
 function scorelinePredict(uh, ud, ua, us1, us2, us3){
@@ -620,7 +640,7 @@ function renderScoreline(inp, oracleScores, oracleResult){
     byId("independentBox").innerHTML='<h3>Independent Result Opinion</h3><p>Run Oracle Fusion to calculate a second Home/Draw/Away opinion.</p>';
     byId("fiftyBox").innerHTML='<h3>50-Point Independent Predictor</h3><p>Run Oracle Fusion to score Home, Draw, and Away out of 50.</p>';
     byId("clusterBox").innerHTML='<h3>Pattern Cluster Predictor</h3><p>Run Oracle Fusion to compare this match with its closest odds-pattern cluster.</p>';
-    byId("twoBetBox").innerHTML='<h3>Two-Bet Formula Predictor</h3><p>Run Oracle Fusion to calculate with the formula learned from your two reference bets.</p>';
+    byId("twoBetBox").innerHTML='<h3>Drift-Compression Formula Predictor</h3><p>Run Oracle Fusion to calculate home drift, away compression, and the score curve learned from your reference bets.</p>';
     byId("scorelineMatches").innerHTML='';
     return null;
   }
@@ -807,7 +827,7 @@ function render() {
   const independentText=independentRes ? ` Independent result opinion: ${LABEL[independentRes.top]} at ${pct(independentRes.out[independentRes.top])}, reliability ${pct(independentRes.reliability)}.` : "";
   const fiftyText=fiftyRes ? ` 50-point independent predictor: ${LABEL[fiftyRes.top]} with Home ${fiftyRes.points["1"]}/50, Draw ${fiftyRes.points.X}/50, Away ${fiftyRes.points["2"]}/50.` : "";
   const clusterText=clusterRes ? ` Pattern cluster predictor: ${LABEL[clusterRes.top]} at ${pct(clusterRes.out[clusterRes.top])}, cluster ${clusterRes.name}, ${clusterRes.exactCount} matching rows.` : "";
-  const twoBetText=twoBetRes ? ` Two-bet formula predictor: formula score ${twoBetRes.score}, result ${LABEL[twoBetRes.result]}, formula probabilities Home ${pct(twoBetRes.calc.out["1"])}, Draw ${pct(twoBetRes.calc.out.X)}, Away ${pct(twoBetRes.calc.out["2"])}, reliability ${pct(twoBetRes.reliability)}.` : "";
+  const twoBetText=twoBetRes ? ` Drift-compression formula predictor: formula score ${twoBetRes.score}, result ${LABEL[twoBetRes.result]}, formula probabilities Home ${pct(twoBetRes.calc.out["1"])}, Draw ${pct(twoBetRes.calc.out.X)}, Away ${pct(twoBetRes.calc.out["2"])}, home drift ${pct(twoBetRes.calc.homeDrift)}, away compression ${pct(twoBetRes.calc.awayCompression)}, reliability ${pct(twoBetRes.reliability)}.` : "";
   const prompt=`Analyse this football odds prediction as a second-opinion model. Odds: home ${fmt(inp.home)}, draw ${fmt(inp.draw)}, away ${fmt(inp.away)}, DC 1X ${fmt(inp.dc1x||0)}, DC X2 ${fmt(inp.dcx2||0)}. Oracle Fusion pick: ${LABEL[r.top]} at ${pct(r.out[r.top])} confidence score ${pct(r.conf)}. 1X2 probabilities: Home ${pct(r.out["1"])}, Draw ${pct(r.out.X)}, Away ${pct(r.out["2"])}. Poisson xG: home ${fmt(r.lam.home)}, away ${fmt(r.lam.away)}. Likely scores: ${r.scores.map(s=>s.score).join(", ")}.${scorelineText}${independentText}${fiftyText}${clusterText}${twoBetText} Upset risk: ${pct(r.upset)}. KSh betting spot says: ${plan.action} ${plan.amount?("KSh "+plan.amount):"NO BET"} from a maximum of KSh ${inp.maxStake}. Tell me whether to trust, reduce stake, or skip, and explain briefly.`;
   byId("promptBox").value=prompt;
 }
