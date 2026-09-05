@@ -1,4 +1,4 @@
-name: Final Engine vs Supplied 3of5 4of5 History
+name: Critical Master Decision Engine
 on:
   push:
     paths:
@@ -10,110 +10,125 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Patch final-engine history reviewer
+      - name: Add critical thinking layer
         shell: bash
         run: |
           python3 <<'PY'
           from pathlib import Path
           import re
-
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
 
-          new=r'''function threeFourIndependent(finalDecision){
-            const hist=[
-              ['3/5',19.1,14.8,16.1,'3-1'],['3/5',19.8,12.2,18.0,'0-3'],['3/5',13.9,21.4,14.6,'1-0'],
-              ['3/5',18.9,20.6,10.5,'1-0'],['3/5',21.6,12.7,15.6,'1-0'],['3/5',20.4,13.0,16.6,'0-2'],
-              ['3/5',22.0,19.2,8.8,'1-0'],['3/5',18.9,19.8,11.2,'3-0'],['3/5',18.4,16.6,15.0,'0-1'],
-              ['4/5',15.8,14.4,19.8,'1-3'],['4/5',25.2,15.8,9.0,'1-0'],['4/5',16.2,15.1,18.7,'2-1'],
-              ['4/5',25.9,10.8,13.3,'0-1'],['4/5',14.4,7.9,27.7,'2-0'],['4/5',20.8,13.9,15.3,'4-2']
-            ].map(([group,h,d,a,score])=>{
-              const [hg,ag]=score.split('-').map(Number);
-              return {group,h,d,a,score,result:hg>ag?'1':hg<ag?'2':'X'};
-            });
+          css=r'''
+/* CRITICAL-MASTER-V1 */
+.critical-panel{margin-top:16px;border:2px solid var(--blue);background:linear-gradient(180deg,#101722,#0b0f15)}
+.critical-head{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center}.critical-head h2{margin:0 0 6px;font-size:30px}.critical-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.critical-score{border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:12px 18px;text-align:center;min-width:130px}.critical-score b{display:block;font-size:32px;color:var(--blue)}.critical-score span{font-size:11px;color:var(--muted)}.critical-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}.critical-card{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:11px}.critical-card b{display:block;margin-bottom:5px}.critical-card span{color:var(--muted);font-size:12px;line-height:1.4}.critical-warning{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px;line-height:1.45}.critical-warning.strong{border-color:var(--home)}.critical-warning.caution{border-color:var(--draw)}.critical-warning.stop{border-color:var(--away);color:var(--away)}
+@media(max-width:700px){.critical-head,.critical-grid{grid-template-columns:1fr}.critical-score{justify-self:start}}
+'''
+          html=r'''
+<!-- CRITICAL-MASTER-V1 -->
+<section class="panel pad critical-panel">
+  <div class="title">Critical Master Decision</div>
+  <div class="critical-head">
+    <div><h2 id="criticalPick">Awaiting prediction</h2><p id="criticalSummary">Adaptive weighting + 15-row history reviewer + Devil's Advocate + lightweight leave-one-out backtest.</p></div>
+    <div class="critical-score"><b id="criticalScore">--/50</b><span>Master strength</span></div>
+  </div>
+  <div class="critical-grid" id="criticalGrid"></div>
+  <div class="critical-warning" id="criticalWarning"></div>
+</section>
+'''
+          js=r'''
+let __historyBacktestCache=null;
+function historyBacktestAccuracy(){
+  if(__historyBacktestCache!==null)return __historyBacktestCache;
+  const rows=(DATA.scores||[]).filter(r=>Number.isFinite(r.home)&&Number.isFinite(r.draw)&&Number.isFinite(r.away)&&r.result).slice(0,220);
+  if(rows.length<20)return (__historyBacktestCache=.50);
+  let ok=0;
+  rows.forEach((r,idx)=>{
+    const near=rows.map((x,j)=>({x,j,d:Math.sqrt(((x.home-r.home)/2.5)**2+((x.draw-r.draw)/1.5)**2+((x.away-r.away)/2.5)**2)})).filter(z=>z.j!==idx).sort((a,b)=>a.d-b.d).slice(0,13);
+    const v={'1':0,'X':0,'2':0};near.forEach(z=>v[z.x.result]+=1/(z.d+.06));
+    const pred=['1','X','2'].sort((a,b)=>v[b]-v[a])[0];if(pred===r.result)ok++;
+  });
+  return (__historyBacktestCache=ok/rows.length);
+}
+function adaptivePredictorWeights(oracle,scoreline,independent,fifty,cluster){
+  const w={oracle:.25,scoreline:.15,independent:.20,fifty:.20,cluster:.20};
+  if(Number.isFinite(oracle?.conf))w.oracle*=.70+oracle.conf*.60;
+  if(scoreline?.goodReference===false)w.scoreline*=.55;
+  if(scoreline?.goodReference===true)w.scoreline*=1.15;
+  if(independent?.out){const a=['1','X','2'].map(k=>independent.out[k]||0).sort((a,b)=>b-a);w.independent*=.75+Math.min(.5,(a[0]-a[1])*2.5);}
+  if(fifty?.points){const a=['1','X','2'].map(k=>fifty.points[k]||0).sort((a,b)=>b-a);w.fifty*=.75+Math.min(.5,(a[0]-a[1])/20);}
+  if(Number.isFinite(cluster?.reliability))w.cluster*=.65+cluster.reliability*.7;
+  const t=Object.values(w).reduce((a,b)=>a+b,0)||1;Object.keys(w).forEach(k=>w[k]/=t);return w;
+}
+function criticalMasterEngine(inp,oracle,scoreline,independent,fifty,cluster,finalDecision,historyReview){
+  const keys=['1','X','2'],score={'1':0,'X':0,'2':0},w=adaptivePredictorWeights(oracle,scoreline,independent,fifty,cluster);
+  const add=(obj,wt)=>{if(!obj)return;keys.forEach(k=>{const n=Number(obj[k]);if(Number.isFinite(n))score[k]+=n*wt;});};
+  add(oracle?.out,w.oracle);add(independent?.out,w.independent);add(cluster?.out,w.cluster);
+  if(fifty?.points)keys.forEach(k=>score[k]+=(Number(fifty.points[k]||0)/50)*w.fifty);
+  if(scoreline?.ranked){const q={'1':0,'X':0,'2':0};scoreline.ranked.slice(0,8).forEach((x,i)=>q[resultFromScore(x.score)]+=Number(x.pct||0)/(i+1));const z=q['1']+q.X+q['2']||1;keys.forEach(k=>score[k]+=(q[k]/z)*w.scoreline);}
+  let total=score['1']+score.X+score['2']||1;keys.forEach(k=>score[k]/=total);
 
-            if(!finalDecision || !finalDecision.score){
-              return {ready:false,hist};
-            }
+  const backtest=historyBacktestAccuracy();
+  if(historyReview?.ready){const hw=clamp(.10+(backtest-.33)*.35,.08,.24);keys.forEach(k=>score[k]*=(1-hw));score[historyReview.top]+=hw;total=score['1']+score.X+score['2'];keys.forEach(k=>score[k]/=total);}
+  const order=keys.slice().sort((a,b)=>score[b]-score[a]),top=order[0],second=order[1],gap=score[top]-score[second];
 
-            const engine={
-              h:50*Number(finalDecision.score['1']||0),
-              d:50*Number(finalDecision.score.X||0),
-              a:50*Number(finalDecision.score['2']||0)
-            };
-            const engineTop=finalDecision.top;
-            const agreement=Number(finalDecision.agreement||0);
-            const engineGroup=agreement>=4?'4/5':agreement===3?'3/5':null;
+  const market=implied(inp.home,inp.draw,inp.away),marketTop=keys.slice().sort((a,b)=>market[b]-market[a])[0];
+  const reasons=[];
+  if(finalDecision?.agreement<4)reasons.push('only '+finalDecision.agreement+'/5 model agreement');
+  if(finalDecision?.gap<.06)reasons.push('small Final Engine separation');
+  if(historyReview?.ready&&!historyReview.agreesWithEngine)reasons.push('15-row history disagrees with Final Engine');
+  if(marketTop!==top)reasons.push('market favourite conflicts with master pick');
+  if(Number(oracle?.upset||0)>.55)reasons.push('high upset risk');
+  if(scoreline?.goodReference===false)reasons.push('weak scoreline reference');
+  if(gap<.05)reasons.push('master result gap is narrow');
+  const risk=clamp(reasons.length/6 + (1-gap)*.18,0,1);
+  let strength=Math.round(clamp(18+score[top]*24+gap*30+(backtest-.33)*12-risk*13,0,50));
+  let action='BET';if(strength<31||risk>.58)action='NO BET';else if(strength<38||risk>.40)action='WATCH / SMALL BET';
+  return {top,second,score,gap,w,backtest,reasons,risk,strength,action,marketTop};
+}
+function renderCriticalMaster(inp,oracle,scoreline,independent,fifty,cluster,finalDecision,historyReview){
+  const m=criticalMasterEngine(inp,oracle,scoreline,independent,fifty,cluster,finalDecision,historyReview);
+  byId('criticalPick').textContent=`${m.action}: ${LABEL[m.top]}`;byId('criticalScore').textContent=`${m.strength}/50`;
+  byId('criticalSummary').textContent=`This layer challenges the Final Engine instead of blindly following it. Historical leave-one-out accuracy on the sampled archive is ${(m.backtest*100).toFixed(1)}%. Weights adapt to each predictor's current signal quality.`;
+  byId('criticalGrid').innerHTML=`<div class="critical-card"><b>Adaptive weights</b><span>Oracle ${(m.w.oracle*100).toFixed(0)}% · Scoreline ${(m.w.scoreline*100).toFixed(0)}% · Independent ${(m.w.independent*100).toFixed(0)}% · 50-Point ${(m.w.fifty*100).toFixed(0)}% · Cluster ${(m.w.cluster*100).toFixed(0)}%</span></div><div class="critical-card"><b>History judge</b><span>${historyReview?.ready?(historyReview.agreesWithEngine?'Confirms':'Disagrees')+' · '+historyReview.strength+'/50':'Not ready'}<br>Backtest ${(m.backtest*100).toFixed(1)}%</span></div><div class="critical-card"><b>Devil's Advocate</b><span>${m.reasons.length?m.reasons.join(' · '):'No major contradiction found'}<br>Risk ${(m.risk*100).toFixed(0)}%</span></div>`;
+  const el=byId('criticalWarning');el.className='critical-warning '+(m.action==='BET'?'strong':m.action==='NO BET'?'stop':'caution');el.textContent=`MASTER DECISION: ${m.action} ${LABEL[m.top]} · ${m.strength}/50. ${m.reasons.length?'Challenges: '+m.reasons.join('; ')+'.':'All major layers broadly agree.'} This score is a decision-strength indicator, not a guaranteed probability.`;
+  return m;
+}
+'''
 
-            const dist=r=>Math.sqrt((r.h-engine.h)**2+(r.d-engine.d)**2+(r.a-engine.a)**2);
-            const groupPenalty=r=>engineGroup && r.group!==engineGroup ? 4.5 : 0;
-            const topPenalty=r=>r.result===engineTop ? 0 : 1.5;
-            const ranked=hist.slice().sort((a,b)=>(dist(a)+groupPenalty(a)+topPenalty(a))-(dist(b)+groupPenalty(b)+topPenalty(b)));
-            const use=ranked.slice(0,7);
-            const tally={'1':0,'X':0,'2':0};
-            use.forEach((r,i)=>{
-              const similarity=1/(1+dist(r)/9);
-              const rankWeight=1/(1+i*.18);
-              const groupWeight=engineGroup && r.group===engineGroup ? 1.25 : 1;
-              tally[r.result]+=similarity*rankWeight*groupWeight;
-            });
-            const order=['1','X','2'].sort((a,b)=>tally[b]-tally[a]);
-            const top=order[0],second=order[1];
-            const total=tally['1']+tally.X+tally['2']||1;
-            const support=tally[top]/total;
-            const gap=(tally[top]-tally[second])/total;
-            const agreesWithEngine=top===engineTop;
-            let strength=24+support*17+gap*13+(agreesWithEngine?4:0)+(engineGroup==='4/5'?2:0);
-            strength=Math.round(clamp(strength,0,50));
-            const status=agreesWithEngine
-              ? (support>=.55?'CONFIRMS FINAL ENGINE':'LEAN CONFIRMATION')
-              : (support>=.50?'HISTORY OVERRIDES':'HISTORY DISAGREES');
+          if '/* CRITICAL-MASTER-V1 */' not in s:
+            s=s.replace('</style>',css+'\n</style>',1)
+          if '<!-- CRITICAL-MASTER-V1 -->' not in s:
+            marker='<!-- THREE-FOUR-FIVE-INDEPENDENT -->'
+            pos=s.find(marker)
+            if pos<0: raise SystemExit('3/5-4/5 panel marker not found')
+            # place master after the 3/5-4/5 section by inserting before next known panel if possible
+            nextpos=s.find('<section',pos+len(marker))
+            if nextpos<0: nextpos=s.find('</main>',pos)
+            # second section occurrence is the 3/5 panel itself; find closing section
+            close=s.find('</section>',pos)
+            if close<0: raise SystemExit('3/5 section close not found')
+            close+=len('</section>')
+            s=s[:close]+'\n'+html+s[close:]
+          if 'let __historyBacktestCache=null;' not in s:
+            anchor='function finalDecisionEngine('
+            pos=s.find(anchor)
+            if pos<0: raise SystemExit('finalDecisionEngine not found')
+            s=s[:pos]+js+'\n'+s[pos:]
 
-            return {ready:true,hist,engine,engineTop,engineGroup,agreement,ranked,use,tally,top,second,support,gap,strength,status,agreesWithEngine,best:ranked[0]};
-          }
+          old='''  const clusterRes=renderPatternClusterPredictor(inp);\n  const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);\n  const threeFourRes=renderThreeFourIndependent(finalDecision);'''
+          new='''  const clusterRes=renderPatternClusterPredictor(inp);\n  const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);\n  const threeFourRes=renderThreeFourIndependent(finalDecision);\n  const criticalMaster=renderCriticalMaster(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes,finalDecision,threeFourRes);'''
+          if 'const criticalMaster=renderCriticalMaster' not in s:
+            if old not in s: raise SystemExit('render order block not found')
+            s=s.replace(old,new,1)
 
-          function renderThreeFourIndependent(finalDecision){
-            const f=threeFourIndependent(finalDecision);
-            if(!f.ready){
-              byId('threeFourPick').textContent='Awaiting Final Decision Engine';
-              byId('threeFourScore').textContent='--/50';
-              byId('threeFourSummary').textContent='This reviewer runs only after the Final Decision Engine has produced its prediction.';
-              byId('threeFourGrid').innerHTML='';
-              byId('threeFourWarning').textContent='';
-              return f;
-            }
-
-            byId('threeFourPick').textContent=`${f.status}: ${LABEL[f.top]}`;
-            byId('threeFourScore').textContent=`${f.strength}/50`;
-            byId('threeFourSummary').textContent=`Final Engine says ${LABEL[f.engineTop]} with ${f.agreement}/5 agreement and H ${f.engine.h.toFixed(1)}/50, D ${f.engine.d.toFixed(1)}/50, A ${f.engine.a.toFixed(1)}/50. This is compared ONLY with your 15 supplied 3/5–4/5 history records before this reviewer makes its own opinion.`;
-            byId('threeFourGrid').innerHTML=f.use.slice(0,5).map((r,i)=>`<div class="three-four-card"><b>${i+1}. ${r.group} match</b><span>H ${r.h}/50 · D ${r.d}/50 · A ${r.a}/50<br>Score ${r.score} → ${LABEL[r.result]}</span></div>`).join('');
-            const w=byId('threeFourWarning');
-            w.className='three-four-warning '+(f.agreesWithEngine?'strong':'caution');
-            w.textContent=f.agreesWithEngine
-              ? `HISTORY CHECK CONFIRMS FINAL ENGINE: ${Math.round(f.support*100)}% weighted historical support for ${LABEL[f.top]}. Reviewer decision strength ${f.strength}/50.`
-              : `HISTORY CHECK DISAGREES WITH FINAL ENGINE: Final Engine=${LABEL[f.engineTop]}, 15-row history reviewer=${LABEL[f.top]} with ${Math.round(f.support*100)}% weighted support. Treat this as caution.`;
-            return f;
-          }'''
-
-          pat=r'function threeFourIndependent\([^\)]*\)\{.*?function renderThreeFourIndependent\([^\)]*\)\{.*?\n\}'
-          s2,n=re.subn(pat,new,s,count=1,flags=re.S)
-          if n!=1:
-            raise SystemExit(f'predictor block match count={n}')
-
-          old='''  const clusterRes=renderPatternClusterPredictor(inp);\n  const threeFourRes=renderThreeFourIndependent(inp);\n  const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);'''
-          newer='''  const clusterRes=renderPatternClusterPredictor(inp);\n  const finalDecision=renderFinalDecisionEngine(inp,r,scorelineRes,independentRes,fiftyRes,clusterRes);\n  const threeFourRes=renderThreeFourIndependent(finalDecision);'''
-          if old not in s2:
-            raise SystemExit('render order block not found')
-          s2=s2.replace(old,newer,1)
-          s2=s2.replace('Uses only your supplied 3/5 and 4/5 history rows; independent of all other predictors.','Runs after the Final Decision Engine, compares its output against your 15 supplied 3/5–4/5 history rows, then gives its own opinion.')
-          s2=s2.replace('Special consensus check for 3/5 and 4/5 situations across the five existing predictors.','Runs after the Final Decision Engine, compares its output against your 15 supplied 3/5–4/5 history rows, then gives its own opinion.')
-
-          p.write_text(s2,encoding='utf-8')
+          p.write_text(s,encoding='utf-8')
           PY
           if ! git diff --quiet -- index.html; then
             git config user.name github-actions[bot]
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add index.html
-            git commit -m "Review final engine against supplied 15-row history"
+            git commit -m "Add critical master decision layer"
             git push
           fi
