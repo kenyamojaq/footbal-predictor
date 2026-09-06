@@ -10,6 +10,14 @@ if "['BET','1',37,'1-3']" not in s:
         raise SystemExit('Critical notes history insertion point missing')
     s=s.replace(needle,insert,1)
 
+# Confirmed WATCH/SMALL BET HOME 26/50 finished 2-3 AWAY (Over 2.5).
+watch_needle="['WATCH','1',24,'0-1'],"
+watch_insert="['WATCH','1',24,'0-1'],['WATCH','1',26,'2-3'],"
+if "['WATCH','1',26,'2-3']" not in s:
+    if watch_needle not in s:
+        raise SystemExit('Watch Home history insertion point missing')
+    s=s.replace(watch_needle,watch_insert,1)
+
 # Force the Critical Master Notes Reviewer to always choose one of:
 # HOME WIN, AWAY WIN, 1X, or X2. Remove NO CLEAR BET.
 old="""  const resultClear=resultSupport>=.48&&resultGap>=.10;\n  const goalsClear=goalSupport>=.58;\n  const finalPick=resultClear?rs[0]:null;\n  let decision='NO CLEAR BET';\n  if(finalPick){\n    if(action==='NO BET' && resultSupport<.62) decision=`NO BET · LEAN ${LABEL[finalPick]}`;\n    else decision=LABEL[finalPick];\n  }\n  const goalDecision=goalsClear?`${goalTop} 2.5 GOALS`:'NO CLEAR GOALS';\n  const strengthOut=Math.round(clamp(18+resultSupport*18+resultGap*14+(goalsClear?2:0),0,50));\n  return {ready:true,action,pick,strength,ranked,use,resultVote,resultTop:rs[0],resultSecond:rs[1],resultSupport,resultGap,resultClear,decision,goalTop,goalSupport,goalsClear,goalDecision,strengthOut};\n"""
