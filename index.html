@@ -918,17 +918,18 @@ function criticalNotesReviewer(master){
   const resultSupport=resultVote[rs[0]]/rt, resultGap=(resultVote[rs[0]]-resultVote[rs[1]])/rt;
   const goalTop=goalVote.OVER>=goalVote.UNDER?'OVER':'UNDER';
   const gt=goalVote.OVER+goalVote.UNDER||1, goalSupport=goalVote[goalTop]/gt;
-  const resultClear=resultSupport>=.48&&resultGap>=.10;
+  const resultClear=resultSupport>=.50&&resultGap>=.12;
   const goalsClear=goalSupport>=.58;
-  const finalPick=resultClear?rs[0]:null;
-  let decision='NO CLEAR BET';
-  if(finalPick){
-    if(action==='NO BET' && resultSupport<.62) decision=`NO BET · LEAN ${LABEL[finalPick]}`;
-    else decision=LABEL[finalPick];
-  }
+  const p1=resultVote['1']/rt, px=resultVote.X/rt, p2=resultVote['2']/rt;
+  const dc1x=p1+px, dcx2=px+p2;
+  let decision;
+  if(resultClear&&rs[0]==='1') decision='HOME WIN';
+  else if(resultClear&&rs[0]==='2') decision='AWAY WIN';
+  else decision=dc1x>=dcx2?'1X':'X2';
   const goalDecision=goalsClear?`${goalTop} 2.5 GOALS`:'NO CLEAR GOALS';
-  const strengthOut=Math.round(clamp(18+resultSupport*18+resultGap*14+(goalsClear?2:0),0,50));
-  return {ready:true,action,pick,strength,ranked,use,resultVote,resultTop:rs[0],resultSecond:rs[1],resultSupport,resultGap,resultClear,decision,goalTop,goalSupport,goalsClear,goalDecision,strengthOut};
+  const chosenSupport=decision==='HOME WIN'?p1:decision==='AWAY WIN'?p2:decision==='1X'?dc1x:dcx2;
+  const strengthOut=Math.round(clamp(18+chosenSupport*22+resultGap*10+(goalsClear?2:0),0,50));
+  return {ready:true,action,pick,strength,ranked,use,resultVote,resultTop:rs[0],resultSecond:rs[1],resultSupport,resultGap,resultClear,decision,chosenSupport,dc1x,dcx2,goalTop,goalSupport,goalsClear,goalDecision,strengthOut};
 }
 function renderCriticalNotesReviewer(master){
   const n=criticalNotesReviewer(master);
@@ -943,11 +944,9 @@ function renderCriticalNotesReviewer(master){
   byId('notesReviewSummary').textContent=`Critical Master says ${n.action} ${LABEL[n.pick]} at ${n.strength}/50. Reviewer compares that state with ${CRITICAL_NOTES_HISTORY.length} supplied note-results and makes a separate result + goals opinion.`;
   byId('notesReviewGrid').innerHTML=`<div class="notes-review-card"><b>Result opinion</b><span>${n.decision}<br>Support ${(n.resultSupport*100).toFixed(0)}% · gap ${(n.resultGap*100).toFixed(0)}%</span></div><div class="notes-review-card"><b>Goals opinion</b><span>${n.goalDecision}<br>Support ${(n.goalSupport*100).toFixed(0)}%</span></div><div class="notes-review-card"><b>Critical Master feed</b><span>${n.action} · ${LABEL[n.pick]} · ${n.strength}/50</span></div><div class="notes-review-card"><b>Closest note cases</b><span>${n.use.slice(0,4).map(r=>`${r.action} ${LABEL[r.pick]} ${r.strength}/50 → ${r.score}`).join('<br>')}</span></div>`;
   const e=byId('notesReviewWarning');
-  const noClear=!n.resultClear;
-  e.className='notes-review-warning '+(noClear?'caution':(n.action==='NO BET'?'stop':'strong'));
-  e.textContent=noClear
-    ? `NO CLEAR BET: the closest note-results do not separate Home/Draw/Away strongly enough. Goals read: ${n.goalDecision}.`
-    : `NOTES REVIEW DECISION: ${n.decision}. Goals: ${n.goalDecision}. This is a historical pattern reviewer, not a guarantee.`;
+  const doubleChance=n.decision==='1X'||n.decision==='X2';
+  e.className='notes-review-warning '+(doubleChance?'caution':'strong');
+  e.textContent=`NOTES REVIEW DECISION: ${n.decision} · support ${(n.chosenSupport*100).toFixed(0)}%. Goals: ${n.goalDecision}. ${doubleChance?'History is mixed, so the reviewer protects the stronger side with double chance.':'History separates a straight win strongly enough.'} This is a historical pattern reviewer, not a guarantee.`;
   return n;
 }
 
