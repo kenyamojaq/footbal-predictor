@@ -18,10 +18,10 @@ if "['WATCH','1',26,'2-3']" not in s:
         raise SystemExit('Watch Home history insertion point missing')
     s=s.replace(watch_needle,watch_insert,1)
 
-# Confirmed NO BET AWAY 28/50 finished 0-5 AWAY (Over 2.5).
+# Confirmed NO BET AWAY cases: 28/50 -> 0-5 and 27/50 -> 2-3 (both Away, Over 2.5).
 away_needle="['NO BET','2',19,'3-2'],"
-away_insert="['NO BET','2',19,'3-2'],['NO BET','2',28,'0-5'],"
-if "['NO BET','2',28,'0-5']" not in s:
+away_insert="['NO BET','2',19,'3-2'],['NO BET','2',28,'0-5'],['NO BET','2',27,'2-3'],"
+if "['NO BET','2',27,'2-3']" not in s:
     if away_needle not in s:
         raise SystemExit('No Bet Away history insertion point missing')
     s=s.replace(away_needle,away_insert,1)
