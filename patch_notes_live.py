@@ -10,10 +10,10 @@ if "['BET','1',40,'2-1']" not in s:
         raise SystemExit('Critical notes history insertion point missing')
     s=s.replace(needle,insert,1)
 
-# Confirmed WATCH/SMALL BET HOME 26/50 finished 2-3 AWAY (Over 2.5).
+# Confirmed WATCH/SMALL BET HOME misses: 26/50 -> 2-3 and 28/50 -> 2-3 (Away, Over 2.5).
 watch_needle="['WATCH','1',24,'0-1'],"
-watch_insert="['WATCH','1',24,'0-1'],['WATCH','1',26,'2-3'],"
-if "['WATCH','1',26,'2-3']" not in s:
+watch_insert="['WATCH','1',24,'0-1'],['WATCH','1',26,'2-3'],['WATCH','1',28,'2-3'],"
+if "['WATCH','1',28,'2-3']" not in s:
     if watch_needle not in s:
         raise SystemExit('Watch Home history insertion point missing')
     s=s.replace(watch_needle,watch_insert,1)
